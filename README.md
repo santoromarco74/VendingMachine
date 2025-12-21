@@ -46,6 +46,19 @@ Il progetto dimostra la comunicazione bidirezionale via **BLE (Bluetooth Low Ene
 | **LED RGB** | D6 (R), D8 (G), A3 (B) | Stato e Colore Prodotto |
 | **Tasto Utente** | PC_13 (Button Blu) | Annullamento manuale locale |
 
+```markdown
+## 🛠️ Architettura Hardware
+
+Il sistema utilizza una scheda Nucleo F401RE con shield BLE IDB05A2.
+Tutti i sensori e attuatori sono collegati tramite breadboard.
+
+👉 **[Clicca qui per lo Schema Elettrico Completo e Guida al Cablaggio (WIRING.md)](WIRING.md)**
+
+### Componenti Principali
+* **Display:** LCD 16x2 I2C
+* **Sensori:** DHT11, HC-SR04, LDR
+* **Attuatori:** Servo SG90, LED RGB, Buzzer
+
 ---
 
 ## 📡 Protocollo di Comunicazione (GATT)
