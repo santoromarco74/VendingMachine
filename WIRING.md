@@ -31,11 +31,12 @@ Il sistema è progettato per essere alimentato tramite la porta USB della Nucleo
                   +-----------------------+
 
 
-Pin LCD,Pin Nucleo,Descrizione
-GND,GND,Comune
-VCC,5V,Necessario per contrasto ottimale
-SDA,D14 (PB9),I2C Data
-SCL,D15 (PB8),I2C Clock
+|Pin LCD|Pin Nucleo|Descrizione|
+|-------|----------|----------------------|
+|GND|GND|Comune|
+|VCC|5V|Necessario per contrasto ottimale|
+|SDA|D14 (PB9)|I2C Data|
+|SCL|D15 (PB8)|I2C Clock|
 
 Pin Sensore,Pin Nucleo,Descrizione
 VCC,5V,Alimentazione
