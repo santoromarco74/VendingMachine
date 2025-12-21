@@ -26,8 +26,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,7 +40,7 @@ val SERVICE_UUID: UUID = UUID.fromString("0000A000-0000-1000-8000-00805f9b34fb")
 val CHAR_TEMP_UUID: UUID = UUID.fromString("0000A001-0000-1000-8000-00805f9b34fb")
 val CHAR_STATUS_UUID: UUID = UUID.fromString("0000A002-0000-1000-8000-00805f9b34fb")
 val CHAR_HUM_UUID: UUID = UUID.fromString("0000A003-0000-1000-8000-00805f9b34fb")
-val CMD_CHAR_UUID: UUID = UUID.fromString("0000A004-0000-1000-8000-00805f9b34fb") // <--- UUID COMANDI
+val CMD_CHAR_UUID: UUID = UUID.fromString("0000A004-0000-1000-8000-00805f9b34fb")
 val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 class MainActivity : ComponentActivity() {
@@ -54,7 +52,7 @@ class MainActivity : ComponentActivity() {
     private var machineState by mutableIntStateOf(0)
     private var connectionStatus by mutableStateOf("Disconnesso")
     private var isScanning by mutableStateOf(false)
-    private var selectedProduct by mutableStateOf("ACQUA") // Default
+    private var selectedProduct by mutableStateOf("ACQUA")
 
     private var bluetoothGatt: BluetoothGatt? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -63,7 +61,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF121212)) {
+                // UI FIX: statusBarsPadding e navigationBarsPadding evitano che la grafica tocchi i bordi
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding(),
+                    color = Color(0xFF121212)
+                ) {
                     VendingDashboard()
                 }
             }
@@ -87,20 +92,17 @@ class MainActivity : ComponentActivity() {
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // HEADER
             Text("VENDING MONITOR", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFFBB86FC), letterSpacing = 2.sp)
             Spacer(modifier = Modifier.height(16.dp))
-
-            // STATUS CONNECTION
             StatusIndicator()
-
             Spacer(modifier = Modifier.height(24.dp))
 
             // --- ZONA ACQUISTO (CLIENTE) ---
-            Text("AREA CLIENTI", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            Text("SELEZIONA PRODOTTO", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
             Spacer(modifier = Modifier.height(8.dp))
 
             Card(
@@ -108,32 +110,53 @@ class MainActivity : ComponentActivity() {
                 elevation = CardDefaults.cardElevation(4.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // SELETTORE PRODOTTI
+                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
+                    // RIGA 1: ACQUA & SNACK
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         ProductButton("ACQUA", "1.00 €", Color(0xFF00E5FF), selectedProduct == "ACQUA") {
-                            selectedProduct = "ACQUA"
-                            writeCommand(1) // Invia comando 1
+                            selectedProduct = "ACQUA"; writeCommand(1)
                         }
                         ProductButton("SNACK", "2.00 €", Color(0xFFFF4081), selectedProduct == "SNACK") {
-                            selectedProduct = "SNACK"
-                            writeCommand(2) // Invia comando 2
+                            selectedProduct = "SNACK"; writeCommand(2)
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // RIGA 2: CAFFÈ & THE (NUOVI)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        ProductButton("CAFFÈ", "1.00 €", Color(0xFFFFEB3B), selectedProduct == "CAFFE") {
+                            selectedProduct = "CAFFE"; writeCommand(3)
+                        }
+                        ProductButton("THE", "2.00 €", Color(0xFF69F0AE), selectedProduct == "THE") {
+                            selectedProduct = "THE"; writeCommand(4)
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // CREDITO RESIDUO (GRANDE)
-                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("CREDITO INSERITO", fontSize = 12.sp, color = Color.Gray)
-                        Text("$creditState,00 €", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    // CREDITO
+                    Text("CREDITO INSERITO", fontSize = 12.sp, color = Color.Gray)
+                    Text("$creditState,00 €", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+                    // PULSANTE ANNULLA
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = { writeCommand(9) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFCF6679).copy(alpha = 0.2f)),
+                        border = BorderStroke(1.dp, Color(0xFFCF6679)),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.height(40.dp)
+                    ) {
+                        Text("ANNULLA / RESTO", color = Color(0xFFCF6679), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // --- ZONA MANUTENZIONE (TECNICO) ---
-            Text("DIAGNOSTICA & STATO", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            // --- ZONA MANUTENZIONE ---
+            Text("DIAGNOSTICA", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -143,31 +166,22 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(10.dp))
             MachineStateBar()
-
             Spacer(modifier = Modifier.weight(1f))
-
-            // PULSANTE AZIONE (FONDO SCHERMO)
             ActionButton(permissionsLauncher)
         }
     }
 
-    // --- NUOVI COMPONENTI UI ---
-
+    // --- COMPONENTI UI ---
     @Composable
     fun ProductButton(name: String, price: String, color: Color, isSelected: Boolean, onClick: () -> Unit) {
         val bg = if(isSelected) color.copy(alpha = 0.2f) else Color.Transparent
         val border = if(isSelected) BorderStroke(2.dp, color) else BorderStroke(1.dp, Color.Gray)
-
         Card(
             modifier = Modifier.size(width = 140.dp, height = 100.dp).clickable { onClick() },
             colors = CardDefaults.cardColors(containerColor = bg),
             border = border
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(name, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if(isSelected) color else Color.White)
                 Text(price, fontSize = 14.sp, color = Color.Gray)
             }
@@ -207,7 +221,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ... (StatusIndicator e ActionButton rimangono uguali, vedi sotto) ...
     @Composable
     fun StatusIndicator() {
         val colorStato = when {
@@ -226,7 +239,6 @@ class MainActivity : ComponentActivity() {
     fun ActionButton(launcher: androidx.activity.result.ActivityResultLauncher<Array<String>>) {
         val buttonColor = if(connectionStatus == "Connesso") Color(0xFFCF6679) else Color(0xFFBB86FC)
         val text = if(connectionStatus == "Connesso") "DISCONNETTI" else "CONNETTI DISPOSITIVO"
-
         Button(
             onClick = {
                 if(connectionStatus == "Connesso") disconnectDevice()
@@ -239,28 +251,23 @@ class MainActivity : ComponentActivity() {
         ) { Text(text, color = Color.Black, fontWeight = FontWeight.Bold) }
     }
 
-    // --- LOGICA BLUETOOTH ---
+    // --- LOGICA BLUETOOTH (DEPRECATIONS FIXED) ---
 
-    // NUOVA FUNZIONE DI SCRITTURA (CORRETTA)
     @SuppressLint("MissingPermission")
     private fun writeCommand(cmd: Int) {
         if (bluetoothGatt == null) return
         val service = bluetoothGatt?.getService(SERVICE_UUID) ?: return
         val charCmd = service.getCharacteristic(CMD_CHAR_UUID) ?: return
-
         val payload = byteArrayOf(cmd.toByte())
 
-        // Android 13+ (Tiramisu) usa una sintassi diversa
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            bluetoothGatt?.writeCharacteristic(
-                charCmd,
-                payload,
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE // <--- QUI ERA L'ERRORE
-            )
+            bluetoothGatt?.writeCharacteristic(charCmd, payload, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
         } else {
-            // Versioni vecchie di Android
+            @Suppress("DEPRECATION")
             charCmd.value = payload
+            @Suppress("DEPRECATION")
             charCmd.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            @Suppress("DEPRECATION")
             bluetoothGatt?.writeCharacteristic(charCmd)
         }
     }
@@ -317,6 +324,7 @@ class MainActivity : ComponentActivity() {
     private fun connectToDevice(device: BluetoothDevice) {
         runOnUiThread { connectionStatus = "Connessione..." }
         bluetoothGatt = device.connectGatt(this, false, object : BluetoothGattCallback() {
+
             override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     runOnUiThread { connectionStatus = "Connesso" }
@@ -346,29 +354,37 @@ class MainActivity : ComponentActivity() {
                         val charStatus = service?.getCharacteristic(CHAR_STATUS_UUID)
                         if (charStatus != null) { Thread.sleep(100); enableNotification(gatt!!, charStatus) }
                     }
-                    // Dopo aver attivato tutto, inviamo la selezione di default (ACQUA)
-                    else if (uuid == CHAR_STATUS_UUID) {
-                        writeCommand(1)
-                    }
+                    else if (uuid == CHAR_STATUS_UUID) { writeCommand(1) }
                 }
             }
+
+            // GESTIONE NUOVO CALLBACK (Android 13+) vs VECCHIO
+            override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+                // Questo metodo viene chiamato su Android 13+ (API 33)
+                processData(characteristic.uuid, value)
+            }
+
+            @Deprecated("Deprecated in Java")
             override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-                val data = characteristic.value
-                if (characteristic.uuid == CHAR_TEMP_UUID) {
-                    val temp = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
-                    runOnUiThread { tempState = temp }
-                }
-                else if (characteristic.uuid == CHAR_HUM_UUID) {
-                    val hum = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
-                    runOnUiThread { humState = hum }
-                }
-                else if (characteristic.uuid == CHAR_STATUS_UUID) {
-                    if (data.size >= 2) {
-                        runOnUiThread { creditState = data[0].toInt(); machineState = data[1].toInt() }
-                    }
-                }
+                // Questo metodo viene chiamato su Android < 13
+                @Suppress("DEPRECATION")
+                processData(characteristic.uuid, characteristic.value)
             }
         })
+    }
+
+    private fun processData(uuid: UUID, data: ByteArray) {
+        if (uuid == CHAR_TEMP_UUID) {
+            val temp = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
+            runOnUiThread { tempState = temp }
+        }
+        else if (uuid == CHAR_HUM_UUID) {
+            val hum = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
+            runOnUiThread { humState = hum }
+        }
+        else if (uuid == CHAR_STATUS_UUID && data.size >= 2) {
+            runOnUiThread { creditState = data[0].toInt(); machineState = data[1].toInt() }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -376,8 +392,14 @@ class MainActivity : ComponentActivity() {
         gatt.setCharacteristicNotification(characteristic, true)
         val descriptor = characteristic.getDescriptor(CCCD_UUID)
         if (descriptor != null) {
-            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            gatt.writeDescriptor(descriptor)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            } else {
+                @Suppress("DEPRECATION")
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                gatt.writeDescriptor(descriptor)
+            }
         }
     }
 }
