@@ -272,12 +272,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun resetSensorData() {
+        tempState = 0
+        humState = 0
+        creditState = 0
+        machineState = 0
+    }
+
     @SuppressLint("MissingPermission")
     private fun disconnectDevice() {
         bluetoothGatt?.let { it.disconnect(); it.close() }
         bluetoothGatt = null
         connectionStatus = "Disconnesso"
-        tempState=0; humState=0; creditState=0; machineState=0
+        resetSensorData()
     }
 
     @SuppressLint("MissingPermission")
@@ -330,7 +337,11 @@ class MainActivity : ComponentActivity() {
                     runOnUiThread { connectionStatus = "Connesso" }
                     gatt?.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    runOnUiThread { connectionStatus = "Disconnesso" }; gatt?.close()
+                    runOnUiThread {
+                        connectionStatus = "Disconnesso"
+                        resetSensorData()  // Reset dati anche su disconnessione improvvisa
+                    }
+                    gatt?.close()
                 }
             }
             override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
@@ -348,13 +359,21 @@ class MainActivity : ComponentActivity() {
                     val service = gatt?.getService(SERVICE_UUID)
                     if (uuid == CHAR_TEMP_UUID) {
                         val charHum = service?.getCharacteristic(CHAR_HUM_UUID)
-                        if (charHum != null) { Thread.sleep(100); enableNotification(gatt!!, charHum) }
+                        // Fix: usa Handler invece di Thread.sleep per evitare blocco thread GATT
+                        if (charHum != null) {
+                            mainHandler.postDelayed({ enableNotification(gatt!!, charHum) }, 100)
+                        }
                     }
                     else if (uuid == CHAR_HUM_UUID) {
                         val charStatus = service?.getCharacteristic(CHAR_STATUS_UUID)
-                        if (charStatus != null) { Thread.sleep(100); enableNotification(gatt!!, charStatus) }
+                        if (charStatus != null) {
+                            mainHandler.postDelayed({ enableNotification(gatt!!, charStatus) }, 100)
+                        }
                     }
-                    else if (uuid == CHAR_STATUS_UUID) { writeCommand(1) }
+                    else if (uuid == CHAR_STATUS_UUID) {
+                        // Seleziona automaticamente ACQUA come prodotto iniziale
+                        mainHandler.post { writeCommand(1) }
+                    }
                 }
             }
 
@@ -374,16 +393,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun processData(uuid: UUID, data: ByteArray) {
-        if (uuid == CHAR_TEMP_UUID) {
+        // Validazione dimensione dati prima del parsing
+        if (uuid == CHAR_TEMP_UUID && data.size >= 4) {
             val temp = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
             runOnUiThread { tempState = temp }
         }
-        else if (uuid == CHAR_HUM_UUID) {
+        else if (uuid == CHAR_HUM_UUID && data.size >= 4) {
             val hum = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
             runOnUiThread { humState = hum }
         }
         else if (uuid == CHAR_STATUS_UUID && data.size >= 2) {
-            runOnUiThread { creditState = data[0].toInt(); machineState = data[1].toInt() }
+            // Fix conversione byte: usa AND 0xFF per interpretare come unsigned (0-255 invece di -128-127)
+            runOnUiThread {
+                creditState = data[0].toInt() and 0xFF
+                machineState = data[1].toInt() and 0xFF
+            }
         }
     }
 
