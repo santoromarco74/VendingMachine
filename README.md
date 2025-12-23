@@ -112,15 +112,43 @@ Scrivendo un byte sulla caratteristica `0xA004`, si controlla la macchina:
 
 ## 🔧 Requisiti & Installazione
 
-### Firmware
-* **IDE:** Keil Studio Cloud / Mbed Studio.
-* **Librerie:** `mbed-os` (v6+), `TextLCD`, `X_NUCLEO_IDB05A1`.
-* **Setup:** Compila `main.cpp` e flasha sulla scheda.
+### 🔌 Firmware STM32
+* **Versione Corrente:** v7.2 (Golden Master Fixed)
+* **IDE:** Keil Studio Cloud / Mbed Studio / Mbed CLI
+* **Librerie:** `mbed-os` (v6+), `TextLCD`, `X_NUCLEO_IDB05A1`
+* **File:** [`firmware/main.cpp`](firmware/main.cpp) ← **Usa questa versione!**
+* **Guida Completa:** Vedi [`firmware/README.md`](firmware/README.md)
 
-### Android
-* **IDE:** Android Studio Koala (o superiore).
-* **Min SDK:** 24 (Android 7.0). Target SDK: 34 (Android 14).
-* **Permessi:** Richiede Bluetooth Scan, Connect e Location (gestiti a runtime).
+**⚠️ IMPORTANTE**: Usa `firmware/main.cpp` (v7.2) che include tutti i fix critici.
+La versione v7.1 (`firmware/main_v7.1_original.cpp`) è solo per riferimento storico.
+
+### 📱 Android App
+* **IDE:** Android Studio Koala (o superiore)
+* **Min SDK:** 24 (Android 7.0). Target SDK: 34 (Android 14)
+* **Permessi:** Bluetooth Scan, Connect e Location (gestiti a runtime)
+* **File:** [`app/src/main/java/com/example/vendingmonitor/MainActivity.kt`](app/src/main/java/com/example/vendingmonitor/MainActivity.kt)
+
+### 📋 Bug Fixes & Changelog
+* **Documentazione Fix:** [`BUGFIXES.md`](BUGFIXES.md)
+* **Wiring Hardware:** [`WIRING.md`](WIRING.md)
+
+---
+
+## 📁 Struttura Repository
+
+```
+VendingMonitor/
+├── app/                          # App Android (Kotlin + Jetpack Compose)
+│   └── src/main/java/com/example/vendingmonitor/
+│       └── MainActivity.kt       # Activity principale con gestione BLE
+├── firmware/                     # Firmware STM32 (C++ Mbed OS)
+│   ├── main.cpp                  # ← v7.2 CORRETTA (usa questa!)
+│   ├── main_v7.1_original.cpp    # Versione originale (deprecata)
+│   └── README.md                 # Guida compilazione firmware
+├── BUGFIXES.md                   # Documentazione bug fix v7.2
+├── WIRING.md                     # Schema elettrico e cablaggio
+└── README.md                     # Questo file
+```
 
 ---
 
