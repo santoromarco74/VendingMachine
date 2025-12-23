@@ -1,114 +1,159 @@
-# 🥤 Vending Machine IoT Monitor
+# 🥤 Vending Machine IoT Monitor (Full-Stack Project)
 
-![Project Status](https://img.shields.io/badge/Status-Completed-success)
 ![Platform](https://img.shields.io/badge/Platform-STM32%20Nucleo%20%7C%20Android-blue)
-![Connectivity](https://img.shields.io/badge/Connectivity-Bluetooth%20Low%20Energy-orange)
+![Language](https://img.shields.io/badge/Lang-C%2B%2B%20%7C%20Kotlin-orange)
+![Connectivity](https://img.shields.io/badge/Connectivity-Bluetooth%20Low%20Energy-green)
+![Status](https://img.shields.io/badge/Status-Completed-success)
 
-Un sistema IoT completo per la gestione e il monitoraggio di un prototipo di Vending Machine.
-Il progetto integra un firmware C++ basato su **Mbed OS** (eseguito su STM32 Nucleo) e una **Companion App Android** scritta in Kotlin/Jetpack Compose, che comunicano in tempo reale via **Bluetooth Low Energy (BLE)**.
+Un sistema IoT completo che trasforma una scheda **STM32 Nucleo** in una **Vending Machine intelligente**, controllata e monitorata in tempo reale tramite un'**App Android** dedicata.
 
-## ✨ Funzionalità
-
-### 🤖 Hardware (Firmware)
-* **Macchina a Stati Finiti (FSM):** Gestisce logica complessa (Riposo, Attesa, Erogazione, Resto, Errore).
-* **Sensori Intelligenti:**
-    * Rilevamento monete tramite sensore di luce (LDR).
-    * Rilevamento presenza utente tramite ultrasuoni (HC-SR04).
-    * Monitoraggio ambientale (Temperatura/Umidità) con DHT11.
-* **Attuatori:**
-    * Servo motore per l'erogazione del prodotto.
-    * Display LCD I2C per messaggi utente.
-    * Feedback sonoro (Buzzer) e visivo (LED RGB).
-* **Smart Features:**
-    * Sistema di **Resto Automatico** (Timeout 30s).
-    * Tasto di **Annullamento Manuale** (Pulsante Blu).
-    * Blocco di sicurezza per sovra-temperatura.
-
-### 📱 Software (Android App)
-* **Interfaccia Moderna:** UI "Dark Tech" realizzata con **Jetpack Compose**.
-* **Real-time Monitoring:** Visualizzazione live di Temperatura, Credito inserito e Stato della macchina.
-* **BLE Management:**
-    * Scansione automatica e filtrata dei dispositivi.
-    * Gestione permessi Android 12+ (Scan/Connect) e Legacy (Location).
-    * Logica di sottoscrizione notifiche sequenziale (per evitare congestione GATT).
+Il progetto dimostra la comunicazione bidirezionale via **BLE (Bluetooth Low Energy)**: l'App non solo legge i dati dei sensori, ma invia comandi per selezionare prodotti e gestire il sistema.
 
 ---
 
-## 🛠️ Architettura del Sistema
+## ✨ Funzionalità Principali
 
-### Hardware Wiring (Pinout Nucleo F401RE)
+### 🤖 Hardware & Firmware (STM32)
+* **Smart Dispensing:** Gestione di 4 prodotti con prezzi differenziati e feedback visivo RGB dedicato.
+* **Macchina a Stati (FSM):** Logica robusta con stati di *Eco-Mode*, *Attesa*, *Erogazione*, *Resto* ed *Errore*.
+* **Sensori:**
+    * 🪙 **Monete:** Simulazione inserimento tramite sensore di luce (LDR).
+    * 🌡️ **Ambiente:** Monitoraggio Temperatura e Umidità (DHT11).
+    * 🚶 **Presenza:** Attivazione automatica display all'avvicinarsi dell'utente (Ultrasuoni HC-SR04).
+* **Attuatori:** Display LCD I2C, Servo Motore, Buzzer e LED RGB.
+* **Automazione:** Timeout automatico (30s) per il resto se l'utente non completa l'acquisto.
 
-| Componente | Pin Nucleo | Note |
+### 📱 Android App (Kotlin + Compose)
+* **Dashboard "Dark Tech":** Interfaccia moderna divisa in *Area Clienti* (Acquisto) e *Area Diagnostica* (Sensori).
+* **Controllo Remoto:** Selezione prodotti e richiesta rimborso/annullamento direttamente da smartphone.
+* **BLE Management:** Scansione automatica, gestione permessi (Android 12+) e riconnessione fluida.
+
+---
+
+## 🛠️ Architettura Hardware
+
+### Pinout (Nucleo F401RE + IDB05A2 Shield)
+
+| Componente | Pin Nucleo | Funzione |
 | :--- | :--- | :--- |
-| **BLE Shield** | Morpho | X-NUCLEO-IDB05A2 |
-| **LCD I2C** | D14 (SDA), D15 (SCL) | Indirizzo 0x4E o 0x27 |
-| **Trigger Ultrasuoni** | A1 | |
-| **Echo Ultrasuoni** | D9 | Interrupt Safe |
-| **Sensore LDR** | A2 | Analog In |
-| **DHT11** | D4 | Pull-up interno |
-| **Servo Motore** | D5 | PWM |
-| **Buzzer** | D2 | Attivo Alto |
-| **LED RGB** | D6 (R), D8 (G), A3 (B) | |
-| **Tasto Annulla** | PC_13 | Tasto Blu utente |
+| **BLE Shield** | Morpho | X-NUCLEO-IDB05A2 (SPI) |
+| **LCD I2C** | D14 (SDA), D15 (SCL) | Interfaccia Utente (Indirizzo 0x4E/0x27) |
+| **Sensore Ultrasuoni** | A1 (Trig), D9 (Echo) | Rilevamento presenza (Interrupt Safe) |
+| **Sensore LDR** | A2 (Analog) | Rilevamento passaggio monete |
+| **Sensore DHT11** | D4 | Temperatura & Umidità |
+| **Servo Motore** | D5 (PWM) | Meccanismo erogazione |
+| **Buzzer** | D2 | Feedback acustico |
+| **LED RGB** | D6 (R), D8 (G), A3 (B) | Stato e Colore Prodotto |
+| **Tasto Utente** | PC_13 (Button Blu) | Annullamento manuale locale |
 
-### Protocollo BLE (GATT)
+```markdown
+## 🛠️ Architettura Hardware
 
-Il sistema espone un **Custom Service** con UUID `0xA000`.
+Il sistema utilizza una scheda Nucleo F401RE con shield BLE IDB05A2.
+Tutti i sensori e attuatori sono collegati tramite breadboard.
 
-| Caratteristica | UUID | Tipo | Descrizione |
-| :--- | :--- | :--- | :--- |
-| **Temperatura** | `0xA001` | Notify (Int32) | Temperatura in °C (Little Endian). |
-| **Stato/Credito** | `0xA002` | Notify (Byte Array) | **Byte 0:** Credito attuale (€)<br>**Byte 1:** ID Stato (0=Eco, 1=Attesa, 2=Erog, 3=Resto, 4=Err) |
+👉 **[Clicca qui per lo Schema Elettrico Completo e Guida al Cablaggio (WIRING.md)](WIRING.md)**
+
+### Componenti Principali
+* **Display:** LCD 16x2 I2C
+* **Sensori:** DHT11, HC-SR04, LDR
+* **Attuatori:** Servo SG90, LED RGB, Buzzer
 
 ---
 
-## 🚀 Installazione e Setup
+## 📡 Protocollo di Comunicazione (GATT)
 
-### 1. Firmware (STM32)
-1.  Aprire il progetto in **Keil Studio Cloud** o **Mbed Studio**.
-2.  Importare le librerie necessarie:
-    * `mbed-os`
-    * `TextLCD`
-    * `X_NUCLEO_IDB05A1` (Driver BLE)
-3.  Compilare e flashare il file `main.cpp` sulla scheda Nucleo F401RE.
+Il sistema espone un **Custom Service** con UUID: `0000A000-0000-1000-8000-00805f9b34fb`.
 
-### 2. App Android
-1.  Aprire la cartella `android-app` in **Android Studio** (Koala o superiore).
-2.  Assicurarsi che il file `AndroidManifest.xml` abbia i permessi corretti.
-3.  Collegare un dispositivo Android (con Debug USB attivo) e premere **Run**.
-4.  Concedere i permessi di **Posizione** e **Dispositivi Vicini** al primo avvio.
+### Caratteristiche (Characteristics)
+
+| Nome | UUID | Tipo | Descrizione |
+| :--- | :--- | :--- | :--- |
+| **Temperatura** | `0xA001` | `NOTIFY` | Invia la temperatura in °C (Int32 Little Endian). |
+| **Stato Sistema** | `0xA002` | `NOTIFY` | Byte Array [2]: `[0]=Credito`, `[1]=ID_Stato`. |
+| **Umidità** | `0xA003` | `NOTIFY` | Invia l'umidità in % (Int32 Little Endian). |
+| **Comandi** | `0xA004` | `WRITE_NO_RESP` | Canale per inviare comandi dall'App alla Scheda. |
+
+### Tabella Comandi (App -> Nucleo)
+
+Scrivendo un byte sulla caratteristica `0xA004`, si controlla la macchina:
+
+| Byte | Azione | Prezzo | Colore LED |
+| :---: | :--- | :---: | :---: |
+| `0x01` | Seleziona **ACQUA** | 1 € | Ciano (🟦🟩) |
+| `0x02` | Seleziona **SNACK** | 2 € | Magenta (🟥🟦) |
+| `0x03` | Seleziona **CAFFÈ** | 1 € | Giallo (🟥🟩) |
+| `0x04` | Seleziona **THE** | 2 € | Verde (🟩) |
+| `0x09` | **ANNULLA / RESTO** | - | Viola (Reset) |
 
 ---
 
 ## 📸 Screenshots
 
-| Dashboard (Disconnesso) | Scansione & Connessione | Monitoraggio Live |
+| Dashboard (Disconnesso) | Selezione Prodotto | Monitoraggio Live |
 | :---: | :---: | :---: |
-| ![Screen1](path/to/image1.png) | ![Screen2](path/to/image2.png) | ![Screen3](path/to/image3.png) |
-
-*(Nota: Sostituisci i path qui sopra con gli screenshot reali della tua app)*
+| *(Inserisci qui screenshot)* | *(Inserisci qui screenshot)* | *(Inserisci qui screenshot)* |
 
 ---
 
-## 🧠 Logica Operativa (FSM)
+## 🚀 Guida all'Uso
 
-Il cuore del sistema è una Macchina a Stati:
+1.  **Avvio:** Accendi la Nucleo. Il display mostra "ECO MODE BLE OK". Il LED è Verde.
+2.  **Connessione:** Apri l'App Android e premi **"CONNETTI DISPOSITIVO"**.
+3.  **Selezione:** Dall'App, tocca un prodotto (es. "SNACK").
+    * La Nucleo cambia LED (Magenta) e mostra "Ins.Mon x SNACK".
+    * Il prezzo target viene impostato a 2€.
+4.  **Inserimento:** Copri il sensore LDR per simulare l'inserimento di monete.
+    * L'App aggiorna il credito in tempo reale.
+5.  **Erogazione:** Raggiunti i 2€, il servo si attiva, il buzzer suona e il credito viene scalato.
+6.  **Ripensamento:** Se hai inserito monete ma vuoi annullare, premi **"ANNULLA / RESTO"** sull'App o il tasto Blu sulla scheda.
 
-1.  **RIPOSO (Eco Mode):** LED Verde. Attende che qualcuno si avvicini (Ultrasuoni < 40cm).
-2.  **ATTESA MONETA:** LED Blu. L'utente ha 30 secondi per inserire monete.
-    * *Input:* Moneta (LDR) -> Incrementa credito.
-    * *Input:* Tasto Blu -> Va a RESTO.
-    * *Timeout:* 30s senza azioni -> Va a RESTO.
-3.  **EROGAZIONE:** LED Giallo. Se Prezzo Raggiunto -> Muove Servo -> Scala Credito.
-4.  **RESTO:** LED Viola. Restituisce il credito residuo o annullato.
-5.  **ERRORE:** LED Rosso lampeggiante. Attivo se Temp > 28°C.
+---
+
+## 🔧 Requisiti & Installazione
+
+### 🔌 Firmware STM32
+* **Versione Corrente:** v7.2 (Golden Master Fixed)
+* **IDE:** Keil Studio Cloud / Mbed Studio / Mbed CLI
+* **Librerie:** `mbed-os` (v6+), `TextLCD`, `X_NUCLEO_IDB05A1`
+* **File:** [`firmware/main.cpp`](firmware/main.cpp) ← **Usa questa versione!**
+* **Guida Completa:** Vedi [`firmware/README.md`](firmware/README.md)
+
+**⚠️ IMPORTANTE**: Usa `firmware/main.cpp` (v7.2) che include tutti i fix critici.
+La versione v7.1 (`firmware/main_v7.1_original.cpp`) è solo per riferimento storico.
+
+### 📱 Android App
+* **IDE:** Android Studio Koala (o superiore)
+* **Min SDK:** 24 (Android 7.0). Target SDK: 34 (Android 14)
+* **Permessi:** Bluetooth Scan, Connect e Location (gestiti a runtime)
+* **File:** [`app/src/main/java/com/example/vendingmonitor/MainActivity.kt`](app/src/main/java/com/example/vendingmonitor/MainActivity.kt)
+
+### 📋 Bug Fixes & Changelog
+* **Documentazione Fix:** [`BUGFIXES.md`](BUGFIXES.md)
+* **Wiring Hardware:** [`WIRING.md`](WIRING.md)
+
+---
+
+## 📁 Struttura Repository
+
+```
+VendingMonitor/
+├── app/                          # App Android (Kotlin + Jetpack Compose)
+│   └── src/main/java/com/example/vendingmonitor/
+│       └── MainActivity.kt       # Activity principale con gestione BLE
+├── firmware/                     # Firmware STM32 (C++ Mbed OS)
+│   ├── main.cpp                  # ← v7.2 CORRETTA (usa questa!)
+│   ├── main_v7.1_original.cpp    # Versione originale (deprecata)
+│   └── README.md                 # Guida compilazione firmware
+├── BUGFIXES.md                   # Documentazione bug fix v7.2
+├── WIRING.md                     # Schema elettrico e cablaggio
+└── README.md                     # Questo file
+```
 
 ---
 
 ## 📄 Licenza
 
-Progetto sviluppato a scopo didattico/prototipale.
-Sentiti libero di usare il codice per i tuoi progetti IoT!
+Progetto Open Source sviluppato a scopo didattico per dimostrare l'integrazione Full-Stack IoT.
 
----
-*Developed by Marco Santoro* 🚀
+*Developed with ❤️ by Marco Santoro*
