@@ -1,0 +1,19 @@
+{
+    "target_overrides": {
+        "*": {
+            "target.features_add": ["BLE"],
+            "target.extra_labels_add": ["CORDIO"],
+            "platform.stdio-baud-rate": 9600,
+            "platform.stdio-convert-newlines": true
+        },
+        "NUCLEO_F401RE": {
+            "target.device_has_add": ["LOWPOWERTIMER"]
+        }
+    },
+    "config": {
+        "ble-role": {
+            "help": "BLE role (peripheral or central)",
+            "value": "\"peripheral\""
+        }
+    }
+}

@@ -52,22 +52,24 @@ Firmware per **ST Nucleo F401RE** con shield BLE **X-NUCLEO-IDB05A2**.
   - `TextLCD` (per display I2C)
   - `X_NUCLEO_IDB05A1` (stack BLE)
 
-### **Opzione 1: Keil Studio Cloud (Online)**
+### **Opzione 1: Keil Studio Cloud (Online)** ⭐ **RACCOMANDATO**
 
 1. Vai su https://studio.keil.arm.com/
-2. Crea nuovo progetto: **"Mbed OS 6 Blinky"**
-3. Sostituisci `main.cpp` con il contenuto di questo file
-4. Aggiungi libreria `TextLCD`:
-   ```
-   Pannello "Libraries" → Add Library → cerca "TextLCD"
-   ```
-5. Aggiungi libreria BLE:
-   ```
-   Pannello "Libraries" → Add Library → cerca "X_NUCLEO_IDB05A1"
-   ```
-6. **Target**: Seleziona `NUCLEO_F401RE`
-7. Click su **"Build"** (icona martello)
-8. Scarica il `.bin` generato
+2. **File → New Project → Empty Mbed OS 6 Project**
+3. Nome progetto: `VendingMachine`
+4. **Target**: Seleziona `NUCLEO_F401RE`
+5. **Carica tutti i file della cartella firmware:**
+   - `main.cpp` (v7.2)
+   - `mbed_app.json` ⚠️ **IMPORTANTE!**
+   - `mbed-os.lib`
+   - `TextLCD.lib`
+6. Click su **"Build"** (icona martello)
+7. Scarica il `.bin` generato
+
+**⚠️ IMPORTANTE**: Se vedi l'errore `'ble/BLE.h' file not found`, assicurati che:
+- Il file `mbed_app.json` sia presente nella root del progetto
+- Il target sia impostato su `NUCLEO_F401RE`
+- Mbed OS sia versione 6.15.0 o superiore
 
 ### **Opzione 2: Mbed Studio (Desktop)**
 
@@ -144,15 +146,39 @@ mbed compile -f
 
 ## 🐛 **Troubleshooting**
 
+### **Problema: "'ble/BLE.h' file not found"** ⚠️ **COMUNE**
+
+**Causa**: Manca il file `mbed_app.json` o la configurazione BLE
+
+**Soluzione**:
+1. **Verifica che `mbed_app.json` sia presente** nella root del progetto
+2. Se manca, crealo con questo contenuto:
+   ```json
+   {
+       "target_overrides": {
+           "*": {
+               "target.features_add": ["BLE"],
+               "target.extra_labels_add": ["CORDIO"]
+           }
+       }
+   }
+   ```
+3. **Ricompila il progetto**
+
 ### **Problema: "Error: Could not compile"**
 
 **Causa**: Librerie mancanti o versione Mbed OS errata
 
-**Soluzione**:
+**Soluzione (Mbed CLI)**:
 ```bash
-mbed add https://github.com/mbedmicro/TextLCD
-mbed add https://github.com/ARMmbed/mbed-os-ble-utils
+mbed deploy  # Scarica tutte le dipendenze
+mbed compile --clean
 ```
+
+**Soluzione (Keil Studio)**:
+1. File → Manage Libraries
+2. Sync libraries
+3. Rebuild progetto
 
 ### **Problema: "LCD non funziona"**
 
