@@ -758,7 +758,7 @@ void updateMachine() {
             }
             break;
 
-        case RESTO:
+        case RESTO: {
             setRGB(1, 0, 1);
             lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
             lcd.setCursor(0, 1);
@@ -783,8 +783,9 @@ void updateMachine() {
                 buzzer = 0; credito = 0; statoCorrente = ATTESA_MONETA;
             }
             break;
+        }
 
-        case ERRORE:
+        case ERRORE: {
             blinkTimer++;
             if (blinkTimer % 2 == 0) { setRGB(1, 0, 0); buzzer = 1; }
             else { setRGB(0, 0, 0); buzzer = 0; }
@@ -811,6 +812,7 @@ void updateMachine() {
             dhtMutex.unlock();
             if (temp_check <= (SOGLIA_TEMP - 2)) statoCorrente = RIPOSO;
             break;
+        }
     }
 }
 
