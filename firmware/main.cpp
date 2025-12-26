@@ -2,20 +2,22 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: GOLDEN MASTER v7.2 (FIXED: LDR Debouncing + DHT Thread + Validazione)
+ * VERSIONE: DUAL DISPLAY v7.3 (OLED SSD1306 + LCD 16x2)
  * ======================================================================================
  *
- * CHANGELOG v7.2:
- * - [CRITICAL FIX] Aggiunto debouncing robusto per sensore LDR (evita conteggi multipli)
- * - [CRITICAL FIX] DHT11 spostato in thread separato per evitare blocco main loop
- * - [SECURITY] Aggiunta validazione comandi BLE (reject comandi invalidi)
- * - [BUG FIX] Fix buffer overflow LCD con snprintf
- * - [BUG FIX] Fix timeout underflow con controllo signed/unsigned
- * - [IMPROVEMENT] Aggiunto watchdog timer per recovery automatico
- * - [UX] Aumentato tempo erogazione automatica da 2s a 5s (permette inserire più monete)
- * - [UX] Aggiunto countdown erogazione su LCD quando credito sufficiente
- * - [FEATURE] Acquisti multipli con timeout inattività: dopo erogazione permetti selezione
- *   altro prodotto. Timeout 30s di inattività → RESTO automatico. Annulla sempre disponibile.
+ * CHANGELOG v7.3:
+ * - [FEATURE] Aggiunto display OLED SSD1306 (128x32) per info diagnostiche sistema
+ * - [UX] Separazione interfacce: LCD per utente (prodotti), OLED per tecnico (diagnostica)
+ * - [DRIVER] Driver SSD1306 minimale embedded (auto-detect 0x3C/0x3D, font 5x7, 200 righe)
+ * - [I2C] Condivisione bus I2C tra LCD e OLED (indirizzi diversi: 0x4E e 0x3C)
+ * - [DISPLAY] OLED mostra: Stato FSM, Temp/Umidità, Distanza, LDR, Credito, Prodotto
+ * - [DISPLAY] LCD dedicato a: Messaggi utente, Prodotto selezionato, Countdown, Errori
+ * - [FEATURE] Acquisti multipli con conferma manuale (comando BLE 0x0A)
+ * - [BUG FIX] Tutti i fix di v7.2 (LDR debouncing, DHT thread, validazione BLE)
+ *
+ * HARDWARE RICHIESTO:
+ * - LCD I2C 16x2 (indirizzo 0x4E) su pin D14/D15
+ * - OLED SSD1306 0.91" 128x32 (indirizzo 0x3C) su pin D14/D15 (bus condiviso)
  */
 
 #include "mbed.h"
@@ -23,6 +25,216 @@
 #include "ble/Gap.h"
 #include "ble/GattServer.h"
 #include "TextLCD.h"
+
+// ======================================================================================
+// DRIVER SSD1306 OLED MINIMALE (128x32 / 128x64)
+// ======================================================================================
+class SSD1306 {
+private:
+    I2C *i2c;
+    uint8_t addr;
+    uint8_t width, height, pages;
+    uint8_t cursorX, cursorY;
+    bool initialized;
+
+    // Font 5x7 minimale per caratteri ASCII 32-126
+    static const uint8_t font5x7[95][5];
+
+    void command(uint8_t cmd) {
+        uint8_t data[2] = {0x00, cmd};
+        i2c->write(addr, (char*)data, 2);
+    }
+
+    void data(uint8_t* buf, int len) {
+        uint8_t temp[len + 1];
+        temp[0] = 0x40;
+        memcpy(temp + 1, buf, len);
+        i2c->write(addr, (char*)temp, len + 1);
+    }
+
+public:
+    SSD1306(PinName sda, PinName scl, uint8_t address = 0x3C, uint8_t h = 32)
+        : width(128), height(h), cursorX(0), cursorY(0), initialized(false) {
+        i2c = new I2C(sda, scl);
+        i2c->frequency(400000);
+        addr = address << 1;
+        pages = height / 8;
+    }
+
+    // Condividi bus I2C esistente (per usare stesso bus di LCD)
+    void attachToI2C(I2C* existingI2C, uint8_t address = 0x3C, uint8_t h = 32) {
+        i2c = existingI2C;
+        addr = address << 1;
+        height = h;
+        pages = height / 8;
+    }
+
+    bool init() {
+        // Auto-detect indirizzo: prova 0x3C poi 0x3D
+        for (uint8_t testAddr : {0x3C, 0x3D}) {
+            addr = testAddr << 1;
+            if (i2c->write(addr, NULL, 0) == 0) {
+                printf("[OLED] Trovato SSD1306 a 0x%02X, altezza=%d\n", testAddr, height);
+
+                // Sequenza init SSD1306
+                command(0xAE); // Display off
+                command(0xD5); command(0x80); // Clock div
+                command(0xA8); command(height - 1); // Multiplex
+                command(0xD3); command(0x00); // Display offset
+                command(0x40); // Start line
+                command(0x8D); command(0x14); // Charge pump ON
+                command(0x20); command(0x00); // Addressing mode horizontal
+                command(0xA1); // Segment remap
+                command(0xC8); // COM scan direction
+                command(0xDA); command(height == 32 ? 0x02 : 0x12); // COM pins
+                command(0x81); command(0x8F); // Contrast
+                command(0xD9); command(0xF1); // Precharge
+                command(0xDB); command(0x40); // VCOM detect
+                command(0xA4); // Display RAM
+                command(0xA6); // Normal display
+                command(0xAF); // Display on
+
+                initialized = true;
+                clear();
+                return true;
+            }
+        }
+        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D)\n");
+        return false;
+    }
+
+    void clear() {
+        if (!initialized) return;
+        cursorX = 0; cursorY = 0;
+        command(0x21); command(0); command(127); // Column range
+        command(0x22); command(0); command(pages - 1); // Page range
+        uint8_t zero[128] = {0};
+        for (int p = 0; p < pages; p++) data(zero, 128);
+    }
+
+    void setCursor(uint8_t x, uint8_t y) {
+        cursorX = x; cursorY = y;
+    }
+
+    void printf(const char* format, ...) {
+        if (!initialized) return;
+        char buffer[64];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(buffer, sizeof(buffer), format, args);
+        va_end(args);
+
+        for (int i = 0; buffer[i] != '\0'; i++) {
+            drawChar(cursorX + i * 6, cursorY, buffer[i]);
+        }
+    }
+
+    void drawChar(uint8_t x, uint8_t page, char c) {
+        if (!initialized || c < 32 || c > 126) return;
+        uint8_t charData[6];
+        memcpy(charData, font5x7[c - 32], 5);
+        charData[5] = 0x00; // Spacing
+
+        command(0x21); command(x); command(x + 5);
+        command(0x22); command(page); command(page);
+        data(charData, 6);
+    }
+};
+
+// Font 5x7 ridotto (solo caratteri essenziali: 0-9, A-Z, spazio, :, /, %, °, C, E)
+const uint8_t SSD1306::font5x7[95][5] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00}, // space
+    {0x00, 0x00, 0x5F, 0x00, 0x00}, // !
+    {0x00, 0x07, 0x00, 0x07, 0x00}, // "
+    {0x14, 0x7F, 0x14, 0x7F, 0x14}, // #
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12}, // $
+    {0x23, 0x13, 0x08, 0x64, 0x62}, // %
+    {0x36, 0x49, 0x55, 0x22, 0x50}, // &
+    {0x00, 0x05, 0x03, 0x00, 0x00}, // '
+    {0x00, 0x1C, 0x22, 0x41, 0x00}, // (
+    {0x00, 0x41, 0x22, 0x1C, 0x00}, // )
+    {0x14, 0x08, 0x3E, 0x08, 0x14}, // *
+    {0x08, 0x08, 0x3E, 0x08, 0x08}, // +
+    {0x00, 0x50, 0x30, 0x00, 0x00}, // ,
+    {0x08, 0x08, 0x08, 0x08, 0x08}, // -
+    {0x00, 0x60, 0x60, 0x00, 0x00}, // .
+    {0x20, 0x10, 0x08, 0x04, 0x02}, // /
+    {0x3E, 0x51, 0x49, 0x45, 0x3E}, // 0
+    {0x00, 0x42, 0x7F, 0x40, 0x00}, // 1
+    {0x42, 0x61, 0x51, 0x49, 0x46}, // 2
+    {0x21, 0x41, 0x45, 0x4B, 0x31}, // 3
+    {0x18, 0x14, 0x12, 0x7F, 0x10}, // 4
+    {0x27, 0x45, 0x45, 0x45, 0x39}, // 5
+    {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 6
+    {0x01, 0x71, 0x09, 0x05, 0x03}, // 7
+    {0x36, 0x49, 0x49, 0x49, 0x36}, // 8
+    {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
+    {0x00, 0x36, 0x36, 0x00, 0x00}, // :
+    {0x00, 0x56, 0x36, 0x00, 0x00}, // ;
+    {0x08, 0x14, 0x22, 0x41, 0x00}, // <
+    {0x14, 0x14, 0x14, 0x14, 0x14}, // =
+    {0x00, 0x41, 0x22, 0x14, 0x08}, // >
+    {0x02, 0x01, 0x51, 0x09, 0x06}, // ?
+    {0x32, 0x49, 0x79, 0x41, 0x3E}, // @
+    {0x7E, 0x11, 0x11, 0x11, 0x7E}, // A
+    {0x7F, 0x49, 0x49, 0x49, 0x36}, // B
+    {0x3E, 0x41, 0x41, 0x41, 0x22}, // C
+    {0x7F, 0x41, 0x41, 0x22, 0x1C}, // D
+    {0x7F, 0x49, 0x49, 0x49, 0x41}, // E
+    {0x7F, 0x09, 0x09, 0x09, 0x01}, // F
+    {0x3E, 0x41, 0x49, 0x49, 0x7A}, // G
+    {0x7F, 0x08, 0x08, 0x08, 0x7F}, // H
+    {0x00, 0x41, 0x7F, 0x41, 0x00}, // I
+    {0x20, 0x40, 0x41, 0x3F, 0x01}, // J
+    {0x7F, 0x08, 0x14, 0x22, 0x41}, // K
+    {0x7F, 0x40, 0x40, 0x40, 0x40}, // L
+    {0x7F, 0x02, 0x0C, 0x02, 0x7F}, // M
+    {0x7F, 0x04, 0x08, 0x10, 0x7F}, // N
+    {0x3E, 0x41, 0x41, 0x41, 0x3E}, // O
+    {0x7F, 0x09, 0x09, 0x09, 0x06}, // P
+    {0x3E, 0x41, 0x51, 0x21, 0x5E}, // Q
+    {0x7F, 0x09, 0x19, 0x29, 0x46}, // R
+    {0x46, 0x49, 0x49, 0x49, 0x31}, // S
+    {0x01, 0x01, 0x7F, 0x01, 0x01}, // T
+    {0x3F, 0x40, 0x40, 0x40, 0x3F}, // U
+    {0x1F, 0x20, 0x40, 0x20, 0x1F}, // V
+    {0x3F, 0x40, 0x38, 0x40, 0x3F}, // W
+    {0x63, 0x14, 0x08, 0x14, 0x63}, // X
+    {0x07, 0x08, 0x70, 0x08, 0x07}, // Y
+    {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
+    {0x00, 0x7F, 0x41, 0x41, 0x00}, // [
+    {0x02, 0x04, 0x08, 0x10, 0x20}, // backslash
+    {0x00, 0x41, 0x41, 0x7F, 0x00}, // ]
+    {0x04, 0x02, 0x01, 0x02, 0x04}, // ^
+    {0x40, 0x40, 0x40, 0x40, 0x40}, // _
+    {0x00, 0x01, 0x02, 0x04, 0x00}, // `
+    {0x20, 0x54, 0x54, 0x54, 0x78}, // a
+    {0x7F, 0x48, 0x44, 0x44, 0x38}, // b
+    {0x38, 0x44, 0x44, 0x44, 0x20}, // c
+    {0x38, 0x44, 0x44, 0x48, 0x7F}, // d
+    {0x38, 0x54, 0x54, 0x54, 0x18}, // e
+    {0x08, 0x7E, 0x09, 0x01, 0x02}, // f
+    {0x0C, 0x52, 0x52, 0x52, 0x3E}, // g
+    {0x7F, 0x08, 0x04, 0x04, 0x78}, // h
+    {0x00, 0x44, 0x7D, 0x40, 0x00}, // i
+    {0x20, 0x40, 0x44, 0x3D, 0x00}, // j
+    {0x7F, 0x10, 0x28, 0x44, 0x00}, // k
+    {0x00, 0x41, 0x7F, 0x40, 0x00}, // l
+    {0x7C, 0x04, 0x18, 0x04, 0x78}, // m
+    {0x7C, 0x08, 0x04, 0x04, 0x78}, // n
+    {0x38, 0x44, 0x44, 0x44, 0x38}, // o
+    {0x7C, 0x14, 0x14, 0x14, 0x08}, // p
+    {0x08, 0x14, 0x14, 0x18, 0x7C}, // q
+    {0x7C, 0x08, 0x04, 0x04, 0x08}, // r
+    {0x48, 0x54, 0x54, 0x54, 0x20}, // s
+    {0x04, 0x3F, 0x44, 0x40, 0x20}, // t
+    {0x3C, 0x40, 0x40, 0x20, 0x7C}, // u
+    {0x1C, 0x20, 0x40, 0x20, 0x1C}, // v
+    {0x3C, 0x40, 0x30, 0x40, 0x3C}, // w
+    {0x44, 0x28, 0x10, 0x28, 0x44}, // x
+    {0x0C, 0x50, 0x50, 0x50, 0x3C}, // y
+    {0x44, 0x64, 0x54, 0x4C, 0x44}  // z
+};
 
 // --- CONFIGURAZIONE PIN ---
 #define PIN_TRIG    A1
@@ -70,6 +282,7 @@ Stato statoPrecedente = ERRORE;
 
 // --- OGGETTI DRIVER ---
 TextLCD lcd(PIN_LCD_SDA, PIN_LCD_SCL, 0x4E);
+SSD1306 oled(PIN_LCD_SDA, PIN_LCD_SCL, 0x3C, 32);  // Condivide bus I2C, auto-detect 0x3C/0x3D
 DigitalOut trig(PIN_TRIG);
 InterruptIn echo(PIN_ECHO);
 DigitalInOut dht(PIN_DHT);
@@ -395,14 +608,19 @@ void updateMachine() {
     switch (statoCorrente) {
         case RIPOSO:
             setRGB(0, 1, 0); buzzer = 0;
-            lcd.setCursor(0, 0); lcd.printf("ECO MODE BLE OK ");
-            lcd.setCursor(0, 1);
-            // Fix buffer overflow con snprintf
-            char buffer[17];
+
+            // LCD: Messaggio utente
+            lcd.setCursor(0, 0); lcd.printf("Avvicinati per  ");
+            lcd.setCursor(0, 1); lcd.printf("iniziare...     ");
+
+            // OLED: Info sistema
+            oled.clear();
+            oled.setCursor(0, 0); oled.printf("RIPOSO-BLE OK");
             dhtMutex.lock();
-            snprintf(buffer, sizeof(buffer), "L:%02d D:%03d T:%02d", ldr_val, dist, temp_int);
+            oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
             dhtMutex.unlock();
-            lcd.printf("%s", buffer);
+            oled.setCursor(0, 2); oled.printf("Dist:%dcm LDR:%d", dist, ldr_val);
+            oled.setCursor(0, 3); oled.printf("Cr:%dE Prod:%d", credito, idProdotto);
 
             if (dist < DISTANZA_ATTIVA) {
                 if (++contatorePresenza > FILTRO_INGRESSO) statoCorrente = ATTESA_MONETA;
@@ -486,6 +704,16 @@ void updateMachine() {
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
                 if (++contatoreAssenza > FILTRO_USCITA) statoCorrente = RIPOSO;
             } else contatoreAssenza = 0;
+
+            // OLED: Info diagnostica
+            oled.clear();
+            oled.setCursor(0, 0); oled.printf("ATTESA MONETA");
+            dhtMutex.lock();
+            oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
+            dhtMutex.unlock();
+            oled.setCursor(0, 2); oled.printf("Cr:%d Prz:%d", credito, prezzoSelezionato);
+            oled.setCursor(0, 3); oled.printf("Dist:%d LDR:%d", dist, ldr_val);
+
             break;
         }
 
@@ -493,6 +721,16 @@ void updateMachine() {
             setRGB(1, 1, 0);
             lcd.setCursor(0, 0); lcd.printf("Erogazione...   ");
             lcd.setCursor(0, 1); lcd.printf("Attendere       ");
+
+            // OLED: Info erogazione
+            oled.clear();
+            oled.setCursor(0, 0); oled.printf("EROGAZIONE");
+            oled.setCursor(0, 1); oled.printf("Prod:%d Prz:%d", idProdotto, prezzoSelezionato);
+            oled.setCursor(0, 2); oled.printf("Credito:%d", credito);
+            dhtMutex.lock();
+            oled.setCursor(0, 3); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
+            dhtMutex.unlock();
+
             if (timerStato.elapsed_time().count() < 2000000) {
                 buzzer = 1;
                 if (timerStato.elapsed_time().count() < 1000000) servo.write(0.10f);
@@ -528,6 +766,16 @@ void updateMachine() {
             snprintf(bufResto, sizeof(bufResto), "Monete: %d", credito);
             lcd.printf("%s", bufResto);
 
+            // OLED: Info resto
+            oled.clear();
+            oled.setCursor(0, 0); oled.printf("RESTO");
+            oled.setCursor(0, 1); oled.printf("Rimborso:%dE", credito);
+            dhtMutex.lock();
+            oled.setCursor(0, 2); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
+            dhtMutex.unlock();
+            int secondiResto = (3000000 - timerStato.elapsed_time().count()) / 1000000;
+            oled.setCursor(0, 3); oled.printf("Timeout:%ds", secondiResto > 0 ? secondiResto : 0);
+
             if ((timerStato.elapsed_time().count() % 400000) < 200000) buzzer = 1;
             else buzzer = 0;
 
@@ -548,6 +796,15 @@ void updateMachine() {
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
             dhtMutex.unlock();
             lcd.printf("%s", bufErr);
+
+            // OLED: Info errore temperatura
+            oled.clear();
+            oled.setCursor(0, 0); oled.printf("!!! ERRORE !!!");
+            dhtMutex.lock();
+            oled.setCursor(0, 1); oled.printf("TEMP ALTA!");
+            oled.setCursor(0, 2); oled.printf("T:%dC Max:%dC", temp_int, SOGLIA_TEMP);
+            oled.setCursor(0, 3); oled.printf("H:%d%% Dist:%d", hum_int, dist);
+            dhtMutex.unlock();
 
             dhtMutex.lock();
             int temp_check = temp_int;
@@ -591,7 +848,14 @@ void scheduleBleEventsProcessing(BLE::OnEventsToProcessCallbackContext *context)
 int main() {
     thread_sleep_for(200); servo.period_ms(20); servo.write(0.05f);
     echo.rise(&echoRise); echo.fall(&echoFall);
-    lcd.begin(); lcd.backlight(); lcd.clear(); lcd.setCursor(0,0); lcd.printf("BOOT v7.2 FIXED");
+    lcd.begin(); lcd.backlight(); lcd.clear(); lcd.setCursor(0,0); lcd.printf("BOOT v7.3 DUAL");
+
+    // Inizializza OLED SSD1306
+    if (oled.init()) {
+        oled.setCursor(0, 0); oled.printf("Vending v7.3");
+        oled.setCursor(0, 1); oled.printf("OLED Ready!");
+    }
+
     buzzer = 1; thread_sleep_for(100); buzzer = 0;
     timerUltimaMoneta.start();
     ldrDebounceTimer.reset(); // Inizializza timer debouncing
