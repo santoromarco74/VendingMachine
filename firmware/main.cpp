@@ -165,7 +165,7 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 uint8_t cmd = params.data[0];
 
                 // VALIDAZIONE COMANDO (SECURITY FIX)
-                if (cmd < 1 || (cmd > 4 && cmd != 9)) {
+                if (cmd < 1 || (cmd > 4 && cmd != 9 && cmd != 10)) {
                     printf("[SECURITY] Comando BLE invalido ricevuto: 0x%02X\n", cmd);
                     return; // Reject invalid commands
                 }
@@ -206,6 +206,20 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         thread_sleep_for(1000);
                         statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
+                    }
+                }
+                // 10. CONFERMA ACQUISTO (per credito residuo)
+                else if (cmd == 10) {
+                    if (credito >= prezzoSelezionato && statoCorrente == ATTESA_MONETA) {
+                        lcd.clear(); lcd.printf("Confermato!");
+                        thread_sleep_for(500);
+                        statoCorrente = EROGAZIONE;
+                        timerStato.reset();
+                        timerStato.start();
+                        vendingServicePtr->updateStatus(credito, statoCorrente);
+                    } else if (credito < prezzoSelezionato) {
+                        lcd.clear(); lcd.printf("Credito Insuffic");
+                        thread_sleep_for(1500);
                     }
                 }
                 // Feedback visivo immediato della selezione

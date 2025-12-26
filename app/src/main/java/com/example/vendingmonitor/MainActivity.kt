@@ -139,8 +139,21 @@ class MainActivity : ComponentActivity() {
                     Text("CREDITO INSERITO", fontSize = 12.sp, color = Color.Gray)
                     Text("$creditState,00 €", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White)
 
-                    // PULSANTE ANNULLA
+                    // PULSANTE CONFERMA ACQUISTO
                     Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = { writeCommand(10) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50).copy(alpha = 0.2f)),
+                        border = BorderStroke(1.dp, Color(0xFF4CAF50)),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.height(40.dp),
+                        enabled = creditState >= 1 // Abilita solo se c'è credito
+                    ) {
+                        Text("CONFERMA ACQUISTO", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    // PULSANTE ANNULLA
+                    Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = { writeCommand(9) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFCF6679).copy(alpha = 0.2f)),
