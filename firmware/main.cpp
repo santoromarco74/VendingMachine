@@ -14,7 +14,6 @@
  * - [IMPROVEMENT] Aggiunto watchdog timer per recovery automatico
  * - [UX] Aumentato tempo erogazione automatica da 2s a 5s (permette inserire più monete)
  * - [UX] Aggiunto countdown erogazione su LCD quando credito sufficiente
- * - [FEATURE] Acquisti multipli: con credito residuo puoi selezionare altri prodotti
  */
 
 #include "mbed.h"
@@ -463,14 +462,11 @@ void updateMachine() {
                 buzzer = 0;
                 credito -= prezzoSelezionato;
 
-                // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
+                // Dopo erogazione: se c'è credito residuo → RESTO automatico
                 if (credito > 0) {
-                    statoCorrente = ATTESA_MONETA;
-                    timerUltimaMoneta.reset();  // Reset timer per nuova selezione
-                    timerUltimaMoneta.start();
-                    lcd.clear();
-                    lcd.printf("Credito: %dE", credito);
-                    thread_sleep_for(1500);  // Mostra credito residuo
+                    statoCorrente = RESTO;
+                    timerStato.reset();
+                    timerStato.start();
                 } else {
                     statoCorrente = ATTESA_MONETA;
                 }
