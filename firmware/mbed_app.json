@@ -2,12 +2,13 @@
     "target_overrides": {
         "*": {
             "target.features_add": ["BLE"],
-            "target.extra_labels_add": ["CORDIO"],
             "platform.stdio-baud-rate": 9600,
             "platform.stdio-convert-newlines": true
         },
         "NUCLEO_F401RE": {
-            "target.device_has_add": ["LOWPOWERTIMER"]
+            "target.device_has_add": ["LOWPOWERTIMER"],
+            "target.components_add": ["BlueNRG_MS"],
+            "idb0xa1.provide-default": true
         }
     },
     "config": {
