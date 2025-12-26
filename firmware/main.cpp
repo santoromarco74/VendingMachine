@@ -210,16 +210,25 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 }
                 // 10. CONFERMA ACQUISTO (per credito residuo)
                 else if (cmd == 10) {
-                    if (credito >= prezzoSelezionato && statoCorrente == ATTESA_MONETA) {
+                    printf("[BLE] Ricevuto comando CONFERMA ACQUISTO (10): credito=%d, prezzo=%d, stato=%d\n",
+                           credito, prezzoSelezionato, statoCorrente);
+
+                    if (statoCorrente != ATTESA_MONETA) {
+                        lcd.clear(); lcd.printf("Stato Invalido!");
+                        printf("[BLE] Conferma rifiutata: stato non ATTESA_MONETA\n");
+                        thread_sleep_for(1500);
+                    } else if (credito < prezzoSelezionato) {
+                        lcd.clear(); lcd.printf("Credito Insuffic");
+                        printf("[BLE] Conferma rifiutata: credito insufficiente\n");
+                        thread_sleep_for(1500);
+                    } else {
                         lcd.clear(); lcd.printf("Confermato!");
+                        printf("[BLE] Conferma accettata: avvio erogazione\n");
                         thread_sleep_for(500);
                         statoCorrente = EROGAZIONE;
                         timerStato.reset();
                         timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
-                    } else if (credito < prezzoSelezionato) {
-                        lcd.clear(); lcd.printf("Credito Insuffic");
-                        thread_sleep_for(1500);
                     }
                 }
                 // Feedback visivo immediato della selezione
