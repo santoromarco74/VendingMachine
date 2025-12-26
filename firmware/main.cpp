@@ -12,6 +12,8 @@
  * - [BUG FIX] Fix buffer overflow LCD con snprintf
  * - [BUG FIX] Fix timeout underflow con controllo signed/unsigned
  * - [IMPROVEMENT] Aggiunto watchdog timer per recovery automatico
+ * - [UX] Aumentato tempo erogazione automatica da 2s a 5s (permette inserire più monete)
+ * - [UX] Aggiunto countdown erogazione su LCD quando credito sufficiente
  */
 
 #include "mbed.h"
@@ -36,6 +38,7 @@
 #define DISTANZA_ATTIVA   40
 #define SOGLIA_TEMP       28
 #define TIMEOUT_RESTO_AUTO 30000000
+#define TIMEOUT_EROGAZIONE_AUTO 5000000  // 5 secondi attesa prima erogazione automatica
 
 // --- DEBOUNCING LDR (NUOVO) ---
 #define LDR_DEBOUNCE_SAMPLES 5      // Numero di campioni consecutivi necessari
@@ -395,14 +398,18 @@ void updateMachine() {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            if (credito >= prezzoSelezionato && tempoPassato < 2000000) {
-                lcd.printf("Attendi...      ");
+            if (credito >= prezzoSelezionato && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
+                // Mostra countdown erogazione quando credito sufficiente
+                int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
+                char buf[17];
+                snprintf(buf, sizeof(buf), "Erog. in %ds...", secondiErogazione);
+                lcd.printf("%s", buf);
             } else {
-                if (credito > 0) {
+                if (credito > 0 && credito < prezzoSelezionato) {
                     char buf[17];
                     snprintf(buf, sizeof(buf), "Timeout in %02ds", secondiMancanti);
                     lcd.printf("%s", buf);
-                } else {
+                } else if (credito == 0) {
                     // Nomi corti per stare in 16 caratteri
                     if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
                     else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
@@ -433,7 +440,7 @@ void updateMachine() {
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
-            else if (credito >= prezzoSelezionato && tempoPassato > 2000000) {
+            else if (credito >= prezzoSelezionato && tempoPassato > TIMEOUT_EROGAZIONE_AUTO) {
                 statoCorrente = EROGAZIONE; timerStato.reset(); timerStato.start();
             }
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
