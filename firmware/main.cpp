@@ -14,6 +14,8 @@
  * - [IMPROVEMENT] Aggiunto watchdog timer per recovery automatico
  * - [UX] Aumentato tempo erogazione automatica da 2s a 5s (permette inserire più monete)
  * - [UX] Aggiunto countdown erogazione su LCD quando credito sufficiente
+ * - [FEATURE] Acquisti multipli con timeout inattività: dopo erogazione permetti selezione
+ *   altro prodotto. Timeout 30s di inattività → RESTO automatico. Annulla sempre disponibile.
  */
 
 #include "mbed.h"
@@ -102,6 +104,7 @@ bool dht_valid = false;     // Nuovo: flag validità dati DHT
 int contatorePresenza = 0;
 int contatoreAssenza = 0;
 int ldrSampleCount = 0;     // Nuovo: contatore campioni per debouncing
+bool creditoResiduo = false; // Flag: true se credito da erogazione precedente
 
 // Mutex per proteggere accesso a temp_int e hum_int tra thread
 Mutex dhtMutex;
@@ -342,6 +345,7 @@ void updateMachine() {
                 monetaInLettura = true;
                 credito++;
                 timerUltimaMoneta.reset();
+                creditoResiduo = false;  // Credito appena inserito, non residuo
                 ldrSampleCount = 0;
                 ldrDebounceTimer.reset();
 
@@ -398,11 +402,16 @@ void updateMachine() {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            if (credito >= prezzoSelezionato && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
-                // Mostra countdown erogazione quando credito sufficiente
+            if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
+                // Mostra countdown erogazione solo per credito fresco (non residuo)
                 int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
                 char buf[17];
                 snprintf(buf, sizeof(buf), "Erog. in %ds...", secondiErogazione);
+                lcd.printf("%s", buf);
+            } else if (credito >= prezzoSelezionato && creditoResiduo) {
+                // Credito residuo: mostra solo credito e timeout RESTO (no auto-erogazione)
+                char buf[17];
+                snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
                 lcd.printf("%s", buf);
             } else {
                 if (credito > 0 && credito < prezzoSelezionato) {
@@ -441,7 +450,14 @@ void updateMachine() {
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
-            else if (credito >= prezzoSelezionato && tempoPassato > TIMEOUT_EROGAZIONE_AUTO) {
+            else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
+                // Timeout per credito residuo: vai a RESTO (no auto-erogazione)
+                lcd.clear(); lcd.printf("Tempo Scaduto!"); thread_sleep_for(1000);
+                statoCorrente = RESTO; timerStato.reset(); timerStato.start();
+                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+            }
+            else if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato > TIMEOUT_EROGAZIONE_AUTO) {
+                // Auto-erogazione solo per credito fresco (non residuo)
                 statoCorrente = EROGAZIONE; timerStato.reset(); timerStato.start();
             }
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
@@ -462,13 +478,19 @@ void updateMachine() {
                 buzzer = 0;
                 credito -= prezzoSelezionato;
 
-                // Dopo erogazione: se c'è credito residuo → RESTO automatico
+                // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
+                // ma con timeout di 30s per inattività → RESTO automatico
                 if (credito > 0) {
-                    statoCorrente = RESTO;
-                    timerStato.reset();
-                    timerStato.start();
+                    statoCorrente = ATTESA_MONETA;
+                    timerUltimaMoneta.reset();  // Reset timer per timeout inattività
+                    timerUltimaMoneta.start();
+                    creditoResiduo = true;      // Marca credito come residuo (no erogazione auto)
+                    lcd.clear();
+                    lcd.printf("Credito: %dE", credito);
+                    thread_sleep_for(1500);  // Mostra credito residuo
                 } else {
                     statoCorrente = ATTESA_MONETA;
+                    creditoResiduo = false;
                 }
 
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
