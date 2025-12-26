@@ -40,9 +40,28 @@ Firmware per **ST Nucleo F401RE** con shield BLE **X-NUCLEO-IDB05A2**.
 
 ---
 
+## ⚠️ **REQUISITI HARDWARE OBBLIGATORI**
+
+Prima di compilare, verifica di avere **fisicamente**:
+
+| Componente | Modello | Obbligatorio | Note |
+|------------|---------|--------------|------|
+| **Scheda Nucleo** | F401RE | ✅ SÌ | MCU STM32F401RE |
+| **Shield BLE** | X-NUCLEO-IDB05A2 (o IDB05A1) | ✅ **SÌ** | La Nucleo **NON ha BLE integrato**! |
+| **Display LCD** | 16x2 I2C | ✅ SÌ | Indirizzo 0x4E o 0x27 |
+| **Sensori** | DHT11, HC-SR04, LDR | ✅ SÌ | Vedi WIRING.md |
+| **Attuatori** | Servo SG90, Buzzer, LED RGB | ✅ SÌ | Vedi WIRING.md |
+
+**🔴 ATTENZIONE**: Senza lo shield X-NUCLEO-IDB05A2 montato, il firmware darà errore:
+```
+Assertion failed: _hci_driver != nullptr
+```
+
+---
+
 ## 🚀 **Come Compilare**
 
-### **Requisiti**
+### **Requisiti Software**
 
 - **IDE**: Keil Studio Cloud oppure Mbed Studio
 - **Toolchain**: ARM GCC 10.x o superiore
@@ -50,24 +69,27 @@ Firmware per **ST Nucleo F401RE** con shield BLE **X-NUCLEO-IDB05A2**.
 - **Librerie**:
   - `mbed-os`
   - `TextLCD` (per display I2C)
-  - `X_NUCLEO_IDB05A1` (stack BLE)
+  - `X_NUCLEO_IDB0XA1` (driver shield BLE)
 
-### **Opzione 1: Keil Studio Cloud (Online)**
+### **Opzione 1: Keil Studio Cloud (Online)** ⭐ **RACCOMANDATO**
 
 1. Vai su https://studio.keil.arm.com/
-2. Crea nuovo progetto: **"Mbed OS 6 Blinky"**
-3. Sostituisci `main.cpp` con il contenuto di questo file
-4. Aggiungi libreria `TextLCD`:
-   ```
-   Pannello "Libraries" → Add Library → cerca "TextLCD"
-   ```
-5. Aggiungi libreria BLE:
-   ```
-   Pannello "Libraries" → Add Library → cerca "X_NUCLEO_IDB05A1"
-   ```
-6. **Target**: Seleziona `NUCLEO_F401RE`
-7. Click su **"Build"** (icona martello)
-8. Scarica il `.bin` generato
+2. **File → New Project → Empty Mbed OS 6 Project**
+3. Nome progetto: `VendingMachine`
+4. **Target**: Seleziona `NUCLEO_F401RE`
+5. **Carica tutti i file della cartella firmware:**
+   - `main.cpp` (v7.2)
+   - `mbed_app.json` ⚠️ **IMPORTANTE!**
+   - `mbed-os.lib`
+   - `TextLCD.lib`
+   - `X_NUCLEO_IDB0XA1.lib` ⚠️ **DRIVER BLE SHIELD!**
+6. Click su **"Build"** (icona martello)
+7. Scarica il `.bin` generato
+
+**⚠️ IMPORTANTE**:
+- Tutti i file `.lib` e `mbed_app.json` devono essere nella root del progetto
+- Il target deve essere `NUCLEO_F401RE`
+- Mbed OS versione 6.15.0 o superiore
 
 ### **Opzione 2: Mbed Studio (Desktop)**
 
@@ -144,15 +166,70 @@ mbed compile -f
 
 ## 🐛 **Troubleshooting**
 
+### **Problema: "Assertion failed: _hci_driver != nullptr"** 🔴 **CRITICO**
+
+**Errore Completo**:
+```
+MbedOS Error Info
+Error Status: 0x80FF0144 Code: 324 Module: 255
+Error Message: Assertion failed: _hci_driver != nullptr
+Please provide an implementation for the HCI driver
+```
+
+**Causa**: Manca il driver dello shield BLE X-NUCLEO-IDB05A2
+
+**Soluzione**:
+1. **Verifica hardware**: Lo shield BLE **deve essere fisicamente montato** sulla Nucleo
+2. **Aggiungi la libreria del driver**: Assicurati che il file `X_NUCLEO_IDB0XA1.lib` sia presente
+3. **Verifica `mbed_app.json`**: Deve contenere:
+   ```json
+   {
+       "target_overrides": {
+           "NUCLEO_F401RE": {
+               "target.components_add": ["BlueNRG_MS"],
+               "idb0xa1.provide-default": true
+           }
+       }
+   }
+   ```
+4. **Ricompila completamente** (clean build)
+
+**⚠️ IMPORTANTE**: La Nucleo F401RE **NON ha BLE integrato**. Serve obbligatoriamente lo shield X-NUCLEO-IDB05A2 (o IDB05A1).
+
+---
+
+### **Problema: "'ble/BLE.h' file not found"** ⚠️ **COMUNE**
+
+**Causa**: Manca il file `mbed_app.json` o la configurazione BLE
+
+**Soluzione**:
+1. **Verifica che `mbed_app.json` sia presente** nella root del progetto
+2. **Verifica che contenga**:
+   ```json
+   {
+       "target_overrides": {
+           "*": {
+               "target.features_add": ["BLE"]
+           }
+       }
+   }
+   ```
+3. **Ricompila il progetto**
+
 ### **Problema: "Error: Could not compile"**
 
 **Causa**: Librerie mancanti o versione Mbed OS errata
 
-**Soluzione**:
+**Soluzione (Mbed CLI)**:
 ```bash
-mbed add https://github.com/mbedmicro/TextLCD
-mbed add https://github.com/ARMmbed/mbed-os-ble-utils
+mbed deploy  # Scarica tutte le dipendenze
+mbed compile --clean
 ```
+
+**Soluzione (Keil Studio)**:
+1. File → Manage Libraries
+2. Sync libraries
+3. Rebuild progetto
 
 ### **Problema: "LCD non funziona"**
 

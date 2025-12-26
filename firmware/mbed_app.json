@@ -1,0 +1,20 @@
+{
+    "target_overrides": {
+        "*": {
+            "target.features_add": ["BLE"],
+            "platform.stdio-baud-rate": 9600,
+            "platform.stdio-convert-newlines": true
+        },
+        "NUCLEO_F401RE": {
+            "target.device_has_add": ["LOWPOWERTIMER"],
+            "target.components_add": ["BlueNRG_MS"],
+            "idb0xa1.provide-default": true
+        }
+    },
+    "config": {
+        "ble-role": {
+            "help": "BLE role (peripheral or central)",
+            "value": "\"peripheral\""
+        }
+    }
+}
