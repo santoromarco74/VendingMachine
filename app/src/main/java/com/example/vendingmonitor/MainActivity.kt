@@ -142,7 +142,10 @@ class MainActivity : ComponentActivity() {
                     // PULSANTE CONFERMA ACQUISTO
                     Spacer(modifier = Modifier.height(10.dp))
                     Button(
-                        onClick = { writeCommand(10) },
+                        onClick = {
+                            Toast.makeText(this@MainActivity, "Invio conferma acquisto...", Toast.LENGTH_SHORT).show()
+                            writeCommand(10)
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50).copy(alpha = 0.2f)),
                         border = BorderStroke(1.dp, Color(0xFF4CAF50)),
                         shape = RoundedCornerShape(50),
@@ -268,10 +271,23 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun writeCommand(cmd: Int) {
-        if (bluetoothGatt == null) return
-        val service = bluetoothGatt?.getService(SERVICE_UUID) ?: return
-        val charCmd = service.getCharacteristic(CMD_CHAR_UUID) ?: return
+        android.util.Log.d("VendingMonitor", "writeCommand chiamato con cmd=$cmd")
+        if (bluetoothGatt == null) {
+            android.util.Log.e("VendingMonitor", "bluetoothGatt è null!")
+            return
+        }
+        val service = bluetoothGatt?.getService(SERVICE_UUID)
+        if (service == null) {
+            android.util.Log.e("VendingMonitor", "Servizio BLE non trovato!")
+            return
+        }
+        val charCmd = service.getCharacteristic(CMD_CHAR_UUID)
+        if (charCmd == null) {
+            android.util.Log.e("VendingMonitor", "Caratteristica CMD non trovata!")
+            return
+        }
         val payload = byteArrayOf(cmd.toByte())
+        android.util.Log.d("VendingMonitor", "Invio comando $cmd al dispositivo BLE")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             bluetoothGatt?.writeCharacteristic(charCmd, payload, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
@@ -283,6 +299,7 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             bluetoothGatt?.writeCharacteristic(charCmd)
         }
+        android.util.Log.d("VendingMonitor", "Comando $cmd inviato con successo")
     }
 
     private fun resetSensorData() {
