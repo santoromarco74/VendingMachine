@@ -14,6 +14,7 @@
  * - [IMPROVEMENT] Aggiunto watchdog timer per recovery automatico
  * - [UX] Aumentato tempo erogazione automatica da 2s a 5s (permette inserire più monete)
  * - [UX] Aggiunto countdown erogazione su LCD quando credito sufficiente
+ * - [FEATURE] Acquisti multipli: con credito residuo puoi selezionare altri prodotti
  */
 
 #include "mbed.h"
@@ -406,11 +407,12 @@ void updateMachine() {
                 lcd.printf("%s", buf);
             } else {
                 if (credito > 0 && credito < prezzoSelezionato) {
+                    // Credito parziale - mostra timeout
                     char buf[17];
-                    snprintf(buf, sizeof(buf), "Timeout in %02ds", secondiMancanti);
+                    snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
                     lcd.printf("%s", buf);
                 } else if (credito == 0) {
-                    // Nomi corti per stare in 16 caratteri
+                    // Nessun credito - mostra messaggio inserimento
                     if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
                     else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
                     else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
@@ -458,12 +460,22 @@ void updateMachine() {
                 if (timerStato.elapsed_time().count() < 1000000) servo.write(0.10f);
                 else servo.write(0.05f);
             } else {
-                buzzer = 0; credito -= prezzoSelezionato;
+                buzzer = 0;
+                credito -= prezzoSelezionato;
+
+                // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
                 if (credito > 0) {
-                    statoCorrente = RESTO; timerStato.reset();
+                    statoCorrente = ATTESA_MONETA;
+                    timerUltimaMoneta.reset();  // Reset timer per nuova selezione
+                    timerUltimaMoneta.start();
+                    lcd.clear();
+                    lcd.printf("Credito: %dE", credito);
+                    thread_sleep_for(1500);  // Mostra credito residuo
                 } else {
                     statoCorrente = ATTESA_MONETA;
                 }
+
+                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             break;
 
