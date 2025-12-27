@@ -125,7 +125,46 @@ public:
         va_end(args);
 
         for (int i = 0; buffer[i] != '\0'; i++) {
-            drawChar(cursorX + i * 6, cursorY, buffer[i]);
+            drawCharBig(cursorX + i * 12, cursorY, buffer[i]);
+        }
+    }
+
+    // Carattere 2x (10x14 pixel) per migliore leggibilità
+    void drawCharBig(uint8_t x, uint8_t page, char c) {
+        if (!initialized || c < 32 || c > 126) return;
+        const uint8_t* fontData = font5x7[c - 32];
+
+        // Scala 2x: ogni byte diventa 2 byte, ogni bit diventa 2 bit
+        uint8_t scaled[10];
+        for (int col = 0; col < 5; col++) {
+            uint8_t byte = fontData[col];
+            uint8_t expanded = 0;
+            // Espandi verticalmente: ogni bit diventa 2 bit
+            for (int bit = 0; bit < 4; bit++) {
+                if (byte & (1 << bit)) {
+                    expanded |= (3 << (bit * 2));
+                }
+            }
+            // Duplica orizzontalmente
+            scaled[col * 2] = expanded;
+            scaled[col * 2 + 1] = expanded;
+        }
+
+        // Scrivi 2 righe (2 page)
+        command(0x21); command(x); command(x + 9);
+        command(0x22); command(page); command(page + 1);
+
+        // Prima riga (byte bassi)
+        for (int i = 0; i < 10; i++) {
+            uint8_t lowByte = scaled[i];
+            i2c->write(addr, "\x40", 1);
+            i2c->write(addr, (char*)&lowByte, 1);
+        }
+        // Seconda riga (byte alti)
+        for (int i = 0; i < 10; i++) {
+            uint8_t highByte = scaled[i] >> 4;
+            i2c->write(addr, "\x40", 1);
+            i2c->write(addr, (char*)&highByte, 1);
         }
     }
 
@@ -602,25 +641,39 @@ void updateMachine() {
     if (statoCorrente != statoPrecedente) {
         lcd.clear(); buzzer = 0; statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
+
+        // Aggiorna OLED solo al cambio stato (evita sfarfallio)
+        oled.clear();
+        switch (statoCorrente) {
+            case RIPOSO:
+                oled.setCursor(0, 0); oled.printf("RIPOSO");
+                break;
+            case ATTESA_MONETA:
+                oled.setCursor(0, 0); oled.printf("ATTESA");
+                break;
+            case EROGAZIONE:
+                oled.setCursor(0, 0); oled.printf("EROGA");
+                break;
+            case RESTO:
+                oled.setCursor(0, 0); oled.printf("RESTO");
+                break;
+            case ERRORE:
+                oled.setCursor(0, 0); oled.printf("ERRORE");
+                break;
+        }
+        // Riga 2: Info real-time (aggiornata ogni 100ms)
+        dhtMutex.lock();
+        oled.setCursor(0, 2); oled.printf("T%d C%d", temp_int, credito);
+        dhtMutex.unlock();
+
         if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
     }
 
     switch (statoCorrente) {
         case RIPOSO:
             setRGB(0, 1, 0); buzzer = 0;
-
-            // LCD: Messaggio utente
             lcd.setCursor(0, 0); lcd.printf("Avvicinati per  ");
             lcd.setCursor(0, 1); lcd.printf("iniziare...     ");
-
-            // OLED: Info sistema
-            oled.clear();
-            oled.setCursor(0, 0); oled.printf("RIPOSO-BLE OK");
-            dhtMutex.lock();
-            oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
-            dhtMutex.unlock();
-            oled.setCursor(0, 2); oled.printf("Dist:%dcm LDR:%d", dist, ldr_val);
-            oled.setCursor(0, 3); oled.printf("Cr:%dE Prod:%d", credito, idProdotto);
 
             if (dist < DISTANZA_ATTIVA) {
                 if (++contatorePresenza > FILTRO_INGRESSO) statoCorrente = ATTESA_MONETA;
@@ -705,15 +758,6 @@ void updateMachine() {
                 if (++contatoreAssenza > FILTRO_USCITA) statoCorrente = RIPOSO;
             } else contatoreAssenza = 0;
 
-            // OLED: Info diagnostica
-            oled.clear();
-            oled.setCursor(0, 0); oled.printf("ATTESA MONETA");
-            dhtMutex.lock();
-            oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
-            dhtMutex.unlock();
-            oled.setCursor(0, 2); oled.printf("Cr:%d Prz:%d", credito, prezzoSelezionato);
-            oled.setCursor(0, 3); oled.printf("Dist:%d LDR:%d", dist, ldr_val);
-
             break;
         }
 
@@ -721,15 +765,6 @@ void updateMachine() {
             setRGB(1, 1, 0);
             lcd.setCursor(0, 0); lcd.printf("Erogazione...   ");
             lcd.setCursor(0, 1); lcd.printf("Attendere       ");
-
-            // OLED: Info erogazione
-            oled.clear();
-            oled.setCursor(0, 0); oled.printf("EROGAZIONE");
-            oled.setCursor(0, 1); oled.printf("Prod:%d Prz:%d", idProdotto, prezzoSelezionato);
-            oled.setCursor(0, 2); oled.printf("Credito:%d", credito);
-            dhtMutex.lock();
-            oled.setCursor(0, 3); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
-            dhtMutex.unlock();
 
             if (timerStato.elapsed_time().count() < 2000000) {
                 buzzer = 1;
@@ -766,16 +801,6 @@ void updateMachine() {
             snprintf(bufResto, sizeof(bufResto), "Monete: %d", credito);
             lcd.printf("%s", bufResto);
 
-            // OLED: Info resto
-            oled.clear();
-            oled.setCursor(0, 0); oled.printf("RESTO");
-            oled.setCursor(0, 1); oled.printf("Rimborso:%dE", credito);
-            dhtMutex.lock();
-            oled.setCursor(0, 2); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
-            dhtMutex.unlock();
-            int secondiResto = (3000000 - timerStato.elapsed_time().count()) / 1000000;
-            oled.setCursor(0, 3); oled.printf("Timeout:%ds", secondiResto > 0 ? secondiResto : 0);
-
             if ((timerStato.elapsed_time().count() % 400000) < 200000) buzzer = 1;
             else buzzer = 0;
 
@@ -795,21 +820,9 @@ void updateMachine() {
             char bufErr[17];
             dhtMutex.lock();
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
-            dhtMutex.unlock();
-            lcd.printf("%s", bufErr);
-
-            // OLED: Info errore temperatura
-            oled.clear();
-            oled.setCursor(0, 0); oled.printf("!!! ERRORE !!!");
-            dhtMutex.lock();
-            oled.setCursor(0, 1); oled.printf("TEMP ALTA!");
-            oled.setCursor(0, 2); oled.printf("T:%dC Max:%dC", temp_int, SOGLIA_TEMP);
-            oled.setCursor(0, 3); oled.printf("H:%d%% Dist:%d", hum_int, dist);
-            dhtMutex.unlock();
-
-            dhtMutex.lock();
             int temp_check = temp_int;
             dhtMutex.unlock();
+            lcd.printf("%s", bufErr);
             if (temp_check <= (SOGLIA_TEMP - 2)) statoCorrente = RIPOSO;
             break;
         }
