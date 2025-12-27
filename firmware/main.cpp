@@ -70,18 +70,11 @@ public:
     }
 
     bool init() {
-        // Ritardo iniziale per stabilizzare bus I2C
-        thread_sleep_for(100);
-
-        // Auto-detect indirizzo: prova 0x3C poi 0x3D (alcuni driver usano già shifted address)
-        for (uint8_t testAddr : {0x3C, 0x3D, 0x78, 0x7A}) {
+        // Auto-detect indirizzo: prova 0x3C poi 0x3D
+        for (uint8_t testAddr : {0x3C, 0x3D}) {
             addr = testAddr << 1;
-            char dummy = 0;
-            if (i2c->write(addr, &dummy, 0) == 0) {
-                printf("[OLED] Trovato SSD1306 a 0x%02X (shifted: 0x%02X), altezza=%d\n",
-                       testAddr, addr, height);
-
-                thread_sleep_for(50);
+            if (i2c->write(addr, NULL, 0) == 0) {
+                printf("[OLED] Trovato SSD1306 a 0x%02X, altezza=%d\n", testAddr, height);
 
                 // Sequenza init SSD1306
                 command(0xAE); // Display off
@@ -94,23 +87,19 @@ public:
                 command(0xA1); // Segment remap
                 command(0xC8); // COM scan direction
                 command(0xDA); command(height == 32 ? 0x02 : 0x12); // COM pins
-                command(0x81); command(0xCF); // Contrast alto per migliore visibilità
+                command(0x81); command(0x8F); // Contrast
                 command(0xD9); command(0xF1); // Precharge
                 command(0xDB); command(0x40); // VCOM detect
                 command(0xA4); // Display RAM
-                command(0xA6); // Normal display (not inverted)
-
-                thread_sleep_for(100);
+                command(0xA6); // Normal display
                 command(0xAF); // Display on
-                thread_sleep_for(100);
 
                 initialized = true;
                 clear();
-                thread_sleep_for(50);
                 return true;
             }
         }
-        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D, 0x78, 0x7A)\n");
+        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D)\n");
         return false;
     }
 
@@ -136,46 +125,7 @@ public:
         va_end(args);
 
         for (int i = 0; buffer[i] != '\0'; i++) {
-            drawCharBig(cursorX + i * 12, cursorY, buffer[i]);
-        }
-    }
-
-    // Carattere 2x (10x14 pixel) per migliore leggibilità
-    void drawCharBig(uint8_t x, uint8_t page, char c) {
-        if (!initialized || c < 32 || c > 126) return;
-        const uint8_t* fontData = font5x7[c - 32];
-
-        // Scala 2x: ogni byte diventa 2 byte, ogni bit diventa 2 bit
-        uint8_t scaled[10];
-        for (int col = 0; col < 5; col++) {
-            uint8_t byte = fontData[col];
-            uint8_t expanded = 0;
-            // Espandi verticalmente: ogni bit diventa 2 bit
-            for (int bit = 0; bit < 4; bit++) {
-                if (byte & (1 << bit)) {
-                    expanded |= (3 << (bit * 2));
-                }
-            }
-            // Duplica orizzontalmente
-            scaled[col * 2] = expanded;
-            scaled[col * 2 + 1] = expanded;
-        }
-
-        // Scrivi 2 righe (2 page)
-        command(0x21); command(x); command(x + 9);
-        command(0x22); command(page); command(page + 1);
-
-        // Prima riga (byte bassi)
-        for (int i = 0; i < 10; i++) {
-            uint8_t lowByte = scaled[i];
-            i2c->write(addr, "\x40", 1);
-            i2c->write(addr, (char*)&lowByte, 1);
-        }
-        // Seconda riga (byte alti)
-        for (int i = 0; i < 10; i++) {
-            uint8_t highByte = scaled[i] >> 4;
-            i2c->write(addr, "\x40", 1);
-            i2c->write(addr, (char*)&highByte, 1);
+            drawChar(cursorX + i * 6, cursorY, buffer[i]);
         }
     }
 
@@ -661,29 +611,27 @@ void updateMachine() {
         lcd.clear(); buzzer = 0; statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
 
-        // Aggiorna OLED solo al cambio stato (evita sfarfallio)
+        // Aggiorna OLED solo al cambio stato (evita sfarfallio) - 4 righe font piccolo
         oled.clear();
-        switch (statoCorrente) {
-            case RIPOSO:
-                oled.setCursor(0, 0); oled.printf("RIPOSO");
-                break;
-            case ATTESA_MONETA:
-                oled.setCursor(0, 0); oled.printf("ATTESA");
-                break;
-            case EROGAZIONE:
-                oled.setCursor(0, 0); oled.printf("EROGA");
-                break;
-            case RESTO:
-                oled.setCursor(0, 0); oled.printf("RESTO");
-                break;
-            case ERRORE:
-                oled.setCursor(0, 0); oled.printf("ERRORE");
-                break;
-        }
-        // Riga 2: Info real-time (aggiornata ogni 100ms)
+
+        // Riga 0: Stato
+        oled.setCursor(0, 0);
+        if (statoCorrente == RIPOSO) oled.printf("RIPOSO - BLE OK");
+        else if (statoCorrente == ATTESA_MONETA) oled.printf("ATTESA MONETA");
+        else if (statoCorrente == EROGAZIONE) oled.printf("EROGAZIONE");
+        else if (statoCorrente == RESTO) oled.printf("RESTO");
+        else if (statoCorrente == ERRORE) oled.printf("!!! ERRORE !!!");
+
+        // Riga 1: Temperatura e Umidità
         dhtMutex.lock();
-        oled.setCursor(0, 2); oled.printf("T%d C%d", temp_int, credito);
+        oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_int, hum_int);
         dhtMutex.unlock();
+
+        // Riga 2: Credito e Prodotto
+        oled.setCursor(0, 2); oled.printf("Cr:%dE Prod:%d", credito, idProdotto);
+
+        // Riga 3: Distanza e LDR
+        oled.setCursor(0, 3); oled.printf("D:%dcm L:%d", dist, ldr_val);
 
         if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
     }
