@@ -326,6 +326,9 @@ const int SCORTE_MAX = 5;        // Capacità massima per prodotto
 // Mutex per proteggere accesso a temp_int e hum_int tra thread
 Mutex dhtMutex;
 
+// Mutex per proteggere accesso LCD (evita race conditions tra loop e BLE callbacks)
+Mutex lcdMutex;
+
 // Watchdog timer
 Watchdog &watchdog = Watchdog::get_instance();
 
@@ -398,87 +401,105 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 // 1. ACQUA (Ciano)
                 if (cmd == 1) {
                     if (scorte[1] == 0) {
+                        lcdMutex.lock();
                         lcd.clear();
                         lcd.setCursor(0, 0); lcd.printf("ACQUA");
                         lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        lcdMutex.unlock();
                         setRGB(1, 0, 0); // Rosso
                         printf("[SCORTE] ACQUA esaurito\n");
                         thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
+                    lcdMutex.lock();
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("ACQUA - 1.00EUR");
                     char buf[17];
                     snprintf(buf, 16, "Rimanenti: %d", scorte[1]);
                     lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    lcdMutex.unlock();
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
                 }
                 // 2. SNACK (Magenta)
                 else if (cmd == 2) {
                     if (scorte[2] == 0) {
+                        lcdMutex.lock();
                         lcd.clear();
                         lcd.setCursor(0, 0); lcd.printf("SNACK");
                         lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        lcdMutex.unlock();
                         setRGB(1, 0, 0); // Rosso
                         printf("[SCORTE] SNACK esaurito\n");
                         thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
+                    lcdMutex.lock();
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("SNACK - 2.00EUR");
                     char buf[17];
                     snprintf(buf, 16, "Rimanenti: %d", scorte[2]);
                     lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    lcdMutex.unlock();
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
                 }
                 // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
                     if (scorte[3] == 0) {
+                        lcdMutex.lock();
                         lcd.clear();
                         lcd.setCursor(0, 0); lcd.printf("CAFFE");
                         lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        lcdMutex.unlock();
                         setRGB(1, 0, 0); // Rosso
                         printf("[SCORTE] CAFFE esaurito\n");
                         thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
+                    lcdMutex.lock();
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("CAFFE - 1.00EUR");
                     char buf[17];
                     snprintf(buf, 16, "Rimanenti: %d", scorte[3]);
                     lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    lcdMutex.unlock();
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
                 }
                 // 4. THE (Verde)
                 else if (cmd == 4) {
                     if (scorte[4] == 0) {
+                        lcdMutex.lock();
                         lcd.clear();
                         lcd.setCursor(0, 0); lcd.printf("THE");
                         lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        lcdMutex.unlock();
                         setRGB(1, 0, 0); // Rosso
                         printf("[SCORTE] THE esaurito\n");
                         thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
+                    lcdMutex.lock();
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("THE   - 2.00EUR");
                     char buf[17];
                     snprintf(buf, 16, "Rimanenti: %d", scorte[4]);
                     lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    lcdMutex.unlock();
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
                 }
                 // 9. ANNULLA
                 else if (cmd == 9) {
                     if (credito > 0) {
+                        lcdMutex.lock();
                         lcd.clear(); lcd.printf("Annullato da App");
+                        lcdMutex.unlock();
                         setRGB(1, 0, 1); // Viola momentaneo
                         thread_sleep_for(1000);
                         statoCorrente = RESTO; timerStato.reset(); timerStato.start();
@@ -491,15 +512,21 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                            credito, prezzoSelezionato, statoCorrente);
 
                     if (statoCorrente != ATTESA_MONETA) {
+                        lcdMutex.lock();
                         lcd.clear(); lcd.printf("Stato Invalido!");
+                        lcdMutex.unlock();
                         printf("[BLE] Conferma rifiutata: stato non ATTESA_MONETA\n");
                         thread_sleep_for(1500);
                     } else if (credito < prezzoSelezionato) {
+                        lcdMutex.lock();
                         lcd.clear(); lcd.printf("Credito Insuffic");
+                        lcdMutex.unlock();
                         printf("[BLE] Conferma rifiutata: credito insufficiente\n");
                         thread_sleep_for(1500);
                     } else {
+                        lcdMutex.lock();
                         lcd.clear(); lcd.printf("Confermato!");
+                        lcdMutex.unlock();
                         printf("[BLE] Conferma accettata: avvio erogazione\n");
                         thread_sleep_for(500);
                         statoCorrente = EROGAZIONE;
@@ -510,9 +537,11 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 }
                 // 11. RIFORNIMENTO (Refill - solo da app)
                 else if (cmd == 11) {
+                    lcdMutex.lock();
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("RIFORNIMENTO");
                     lcd.setCursor(0, 1); lcd.printf("In corso...");
+                    lcdMutex.unlock();
                     setRGB(0, 0, 1); // Blu
 
                     // Ripristina tutte le scorte al massimo
@@ -523,9 +552,11 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     printf("[SCORTE] Rifornimento completato: tutto a %d pezzi\n", SCORTE_MAX);
                     thread_sleep_for(1500);
 
+                    lcdMutex.lock();
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("RIFORNIMENTO");
                     lcd.setCursor(0, 1); lcd.printf("Completato!");
+                    lcdMutex.unlock();
                     thread_sleep_for(1500);
                 }
                 // Feedback visivo immediato della selezione
@@ -536,12 +567,24 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 };
 
 // ======================================================================================
-// GESTORE EVENTI GAP (Disconnessione)
+// GESTORE EVENTI GAP (Connessione/Disconnessione)
 // ======================================================================================
 class VendingGapEventHandler : public ble::Gap::EventHandler {
 public:
+    void onConnectionComplete(const ble::ConnectionCompleteEvent &event) override {
+        // Invia dati iniziali quando l'app si connette
+        if (vendingServicePtr) {
+            thread_sleep_for(500); // Piccolo delay per stabilizzare la connessione
+            vendingServicePtr->updateStatus(credito, statoCorrente);
+            vendingServicePtr->updateTemp(temp_int);
+            vendingServicePtr->updateHum(hum_int);
+            printf("[BLE] Client connesso - dati iniziali inviati\n");
+        }
+    }
+
     void onDisconnectionComplete(const ble::DisconnectionCompleteEvent &event) override {
         BLE::Instance().gap().startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
+        printf("[BLE] Client disconnesso\n");
     }
 };
 
@@ -646,7 +689,10 @@ void updateMachine() {
         dhtMutex.unlock();
 
         if (temp_check >= SOGLIA_TEMP && statoCorrente != ERRORE) {
-            statoCorrente = ERRORE; lcd.clear();
+            statoCorrente = ERRORE;
+            lcdMutex.lock();
+            lcd.clear();
+            lcdMutex.unlock();
         }
     }
 
@@ -684,7 +730,10 @@ void updateMachine() {
     }
 
     if (statoCorrente != statoPrecedente) {
-        lcd.clear(); buzzer = 0; statoPrecedente = statoCorrente;
+        lcdMutex.lock();
+        lcd.clear();
+        lcdMutex.unlock();
+        buzzer = 0; statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
 
         // Aggiorna OLED solo al cambio stato (evita sfarfallio) - 4 righe font piccolo
@@ -771,18 +820,27 @@ void updateMachine() {
             lcd.printf("%s", riga2);
 
             if (tastoAnnulla == 0 && credito > 0) {
-                lcd.clear(); lcd.printf("Annullato Manual"); thread_sleep_for(1000);
+                lcdMutex.lock();
+                lcd.clear(); lcd.printf("Annullato Manual");
+                lcdMutex.unlock();
+                thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito > 0 && credito < prezzoSelezionato && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                lcd.clear(); lcd.printf("Tempo Scaduto!"); thread_sleep_for(1000);
+                lcdMutex.lock();
+                lcd.clear(); lcd.printf("Tempo Scaduto!");
+                lcdMutex.unlock();
+                thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
                 // Timeout per credito residuo: vai a RESTO (no auto-erogazione)
-                lcd.clear(); lcd.printf("Tempo Scaduto!"); thread_sleep_for(1000);
+                lcdMutex.lock();
+                lcd.clear(); lcd.printf("Tempo Scaduto!");
+                lcdMutex.unlock();
+                thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
@@ -828,15 +886,17 @@ void updateMachine() {
                     timerUltimaMoneta.reset();  // Reset timer per timeout inattività
                     timerUltimaMoneta.start();
                     creditoResiduo = true;      // Marca credito come residuo (no erogazione auto)
-                    lcd.clear();
                     char msg1[17], msg2[17];
                     memset(msg1, ' ', 16); msg1[16] = '\0';
                     memset(msg2, ' ', 16); msg2[16] = '\0';
                     snprintf(msg1, 16, "Credito: %d.00E", credito);
                     snprintf(msg2, 16, "Scegli prodotto");
                     msg1[16] = '\0'; msg2[16] = '\0';
+                    lcdMutex.lock();
+                    lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("%s", msg1);
                     lcd.setCursor(0, 1); lcd.printf("%s", msg2);
+                    lcdMutex.unlock();
                     thread_sleep_for(1500);  // Mostra credito residuo
                 } else {
                     statoCorrente = ATTESA_MONETA;

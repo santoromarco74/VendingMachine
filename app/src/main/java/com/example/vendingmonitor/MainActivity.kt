@@ -472,15 +472,23 @@ class MainActivity : ComponentActivity() {
             val hum = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
             runOnUiThread { humState = hum }
         }
-        else if (uuid == CHAR_STATUS_UUID && data.size >= 6) {
-            // Parsing 6 byte: [credito, stato, scorta_acqua, scorta_snack, scorta_caffe, scorta_the]
-            runOnUiThread {
-                creditState = data[0].toInt() and 0xFF
-                machineState = data[1].toInt() and 0xFF
-                scorteAcqua = data[2].toInt() and 0xFF
-                scorteSnack = data[3].toInt() and 0xFF
-                scorteCaffe = data[4].toInt() and 0xFF
-                scorteThe = data[5].toInt() and 0xFF
+        else if (uuid == CHAR_STATUS_UUID) {
+            if (data.size >= 6) {
+                // Parsing 6 byte: [credito, stato, scorta_acqua, scorta_snack, scorta_caffe, scorta_the]
+                runOnUiThread {
+                    creditState = data[0].toInt() and 0xFF
+                    machineState = data[1].toInt() and 0xFF
+                    scorteAcqua = data[2].toInt() and 0xFF
+                    scorteSnack = data[3].toInt() and 0xFF
+                    scorteCaffe = data[4].toInt() and 0xFF
+                    scorteThe = data[5].toInt() and 0xFF
+                }
+            } else if (data.size >= 2) {
+                // Fallback: parsing 2 byte legacy [credito, stato]
+                runOnUiThread {
+                    creditState = data[0].toInt() and 0xFF
+                    machineState = data[1].toInt() and 0xFF
+                }
             }
         }
     }
