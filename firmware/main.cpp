@@ -319,6 +319,10 @@ int contatoreAssenza = 0;
 int ldrSampleCount = 0;     // Nuovo: contatore campioni per debouncing
 bool creditoResiduo = false; // Flag: true se credito da erogazione precedente
 
+// --- GESTIONE SCORTE (Virtual Inventory) ---
+int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
+const int SCORTE_MAX = 5;        // Capacità massima per prodotto
+
 // Mutex per proteggere accesso a temp_int e hum_int tra thread
 Mutex dhtMutex;
 
@@ -351,8 +355,16 @@ public:
     }
 
     void updateStatus(int credit, int state) {
-        uint8_t data[2] = {(uint8_t)credit, (uint8_t)state};
-        ble.gattServer().write(statusChar.getValueHandle(), data, 2);
+        // Invia: [credito, stato, scorte[1..4]]
+        uint8_t data[6] = {
+            (uint8_t)credit,
+            (uint8_t)state,
+            (uint8_t)scorte[1], // ACQUA
+            (uint8_t)scorte[2], // SNACK
+            (uint8_t)scorte[3], // CAFFE
+            (uint8_t)scorte[4]  // THE
+        };
+        ble.gattServer().write(statusChar.getValueHandle(), data, 6);
     }
 
     GattAttribute::Handle_t getCmdHandle() { return cmdChar.getValueHandle(); }
@@ -378,44 +390,88 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 uint8_t cmd = params.data[0];
 
                 // VALIDAZIONE COMANDO (SECURITY FIX)
-                if (cmd < 1 || (cmd > 4 && cmd != 9 && cmd != 10)) {
+                if (cmd < 1 || (cmd > 4 && cmd != 9 && cmd != 10 && cmd != 11)) {
                     printf("[SECURITY] Comando BLE invalido ricevuto: 0x%02X\n", cmd);
                     return; // Reject invalid commands
                 }
 
                 // 1. ACQUA (Ciano)
                 if (cmd == 1) {
+                    if (scorte[1] == 0) {
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("ACQUA");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] ACQUA esaurito\n");
+                        thread_sleep_for(2000);
+                        return;
+                    }
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("ACQUA - 1.00EUR");
-                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[1]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
                 }
                 // 2. SNACK (Magenta)
                 else if (cmd == 2) {
+                    if (scorte[2] == 0) {
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("SNACK");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] SNACK esaurito\n");
+                        thread_sleep_for(2000);
+                        return;
+                    }
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("SNACK - 2.00EUR");
-                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[2]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
                 }
                 // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
+                    if (scorte[3] == 0) {
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("CAFFE");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] CAFFE esaurito\n");
+                        thread_sleep_for(2000);
+                        return;
+                    }
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("CAFFE - 1.00EUR");
-                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[3]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
                 }
                 // 4. THE (Verde)
                 else if (cmd == 4) {
+                    if (scorte[4] == 0) {
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("THE");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] THE esaurito\n");
+                        thread_sleep_for(2000);
+                        return;
+                    }
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
                     lcd.clear();
                     lcd.setCursor(0, 0); lcd.printf("THE   - 2.00EUR");
-                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[4]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
                 }
@@ -451,6 +507,26 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
                     }
+                }
+                // 11. RIFORNIMENTO (Refill - solo da app)
+                else if (cmd == 11) {
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("RIFORNIMENTO");
+                    lcd.setCursor(0, 1); lcd.printf("In corso...");
+                    setRGB(0, 0, 1); // Blu
+
+                    // Ripristina tutte le scorte al massimo
+                    for (int i = 1; i <= 4; i++) {
+                        scorte[i] = SCORTE_MAX;
+                    }
+
+                    printf("[SCORTE] Rifornimento completato: tutto a %d pezzi\n", SCORTE_MAX);
+                    thread_sleep_for(1500);
+
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("RIFORNIMENTO");
+                    lcd.setCursor(0, 1); lcd.printf("Completato!");
+                    thread_sleep_for(1500);
                 }
                 // Feedback visivo immediato della selezione
                 if(cmd >= 1 && cmd <= 4) thread_sleep_for(1000);
@@ -738,6 +814,12 @@ void updateMachine() {
             } else {
                 buzzer = 0;
                 credito -= prezzoSelezionato;
+
+                // GESTIONE SCORTE: Decrementa scorta prodotto erogato
+                if (idProdotto >= 1 && idProdotto <= 4) {
+                    scorte[idProdotto]--;
+                    printf("[SCORTE] Erogato prodotto %d, rimanenti: %d\n", idProdotto, scorte[idProdotto]);
+                }
 
                 // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
                 // ma con timeout di 30s per inattività → RESTO automatico
