@@ -70,11 +70,18 @@ public:
     }
 
     bool init() {
-        // Auto-detect indirizzo: prova 0x3C poi 0x3D
-        for (uint8_t testAddr : {0x3C, 0x3D}) {
+        // Ritardo iniziale per stabilizzare bus I2C
+        thread_sleep_for(100);
+
+        // Auto-detect indirizzo: prova 0x3C poi 0x3D (alcuni driver usano già shifted address)
+        for (uint8_t testAddr : {0x3C, 0x3D, 0x78, 0x7A}) {
             addr = testAddr << 1;
-            if (i2c->write(addr, NULL, 0) == 0) {
-                printf("[OLED] Trovato SSD1306 a 0x%02X, altezza=%d\n", testAddr, height);
+            char dummy = 0;
+            if (i2c->write(addr, &dummy, 0) == 0) {
+                printf("[OLED] Trovato SSD1306 a 0x%02X (shifted: 0x%02X), altezza=%d\n",
+                       testAddr, addr, height);
+
+                thread_sleep_for(50);
 
                 // Sequenza init SSD1306
                 command(0xAE); // Display off
@@ -87,19 +94,23 @@ public:
                 command(0xA1); // Segment remap
                 command(0xC8); // COM scan direction
                 command(0xDA); command(height == 32 ? 0x02 : 0x12); // COM pins
-                command(0x81); command(0x8F); // Contrast
+                command(0x81); command(0xCF); // Contrast alto per migliore visibilità
                 command(0xD9); command(0xF1); // Precharge
                 command(0xDB); command(0x40); // VCOM detect
                 command(0xA4); // Display RAM
-                command(0xA6); // Normal display
+                command(0xA6); // Normal display (not inverted)
+
+                thread_sleep_for(100);
                 command(0xAF); // Display on
+                thread_sleep_for(100);
 
                 initialized = true;
                 clear();
+                thread_sleep_for(50);
                 return true;
             }
         }
-        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D)\n");
+        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D, 0x78, 0x7A)\n");
         return false;
     }
 
@@ -714,22 +725,25 @@ void updateMachine() {
             // RIGA 2: Info stato/credito (dinamico)
             lcd.setCursor(0, 1);
             char riga2[17];
+            memset(riga2, ' ', 16);  // Pre-riempi con spazi per evitare caratteri strani
+            riga2[16] = '\0';
 
             if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
-                // Countdown erogazione automatica
+                // Countdown erogazione automatica + mostra credito
                 int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
-                snprintf(riga2, sizeof(riga2), "Erogaz. in %ds  ", secondiErogazione);
+                snprintf(riga2, 16, "Cr:%dE Erog:%ds", credito, secondiErogazione);
             } else if (credito >= prezzoSelezionato && creditoResiduo) {
                 // Credito residuo: conferma manuale richiesta
-                snprintf(riga2, sizeof(riga2), "Conferma da App ");
+                snprintf(riga2, 16, "Cr:%dE ConfApp", credito);
             } else if (credito > 0 && credito < prezzoSelezionato) {
                 // Credito parziale
                 int mancante = prezzoSelezionato - credito;
-                snprintf(riga2, sizeof(riga2), "Cr:%dE Manca:%dE ", credito, mancante);
+                snprintf(riga2, 16, "Cr:%dE Manca%dE", credito, mancante);
             } else {
                 // Nessun credito
-                snprintf(riga2, sizeof(riga2), "Inserisci moneta");
+                snprintf(riga2, 16, "Inserisci moneta");
             }
+            riga2[16] = '\0';  // Assicura terminazione
             lcd.printf("%s", riga2);
 
             if (tastoAnnulla == 0 && credito > 0) {
@@ -785,8 +799,14 @@ void updateMachine() {
                     timerUltimaMoneta.start();
                     creditoResiduo = true;      // Marca credito come residuo (no erogazione auto)
                     lcd.clear();
-                    lcd.setCursor(0, 0); lcd.printf("Credito: %d.00E ", credito);
-                    lcd.setCursor(0, 1); lcd.printf("Scegli prodotto ");
+                    char msg1[17], msg2[17];
+                    memset(msg1, ' ', 16); msg1[16] = '\0';
+                    memset(msg2, ' ', 16); msg2[16] = '\0';
+                    snprintf(msg1, 16, "Credito: %d.00E", credito);
+                    snprintf(msg2, 16, "Scegli prodotto");
+                    msg1[16] = '\0'; msg2[16] = '\0';
+                    lcd.setCursor(0, 0); lcd.printf("%s", msg1);
+                    lcd.setCursor(0, 1); lcd.printf("%s", msg2);
                     thread_sleep_for(1500);  // Mostra credito residuo
                 } else {
                     statoCorrente = ATTESA_MONETA;
