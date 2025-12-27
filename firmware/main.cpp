@@ -425,28 +425,36 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 // 1. ACQUA (Ciano)
                 if (cmd == 1) {
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
-                    lcd.clear(); lcd.printf("Sel: ACQUA (1E)");
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("ACQUA - 1.00EUR");
+                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
                 }
                 // 2. SNACK (Magenta)
                 else if (cmd == 2) {
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
-                    lcd.clear(); lcd.printf("Sel: SNACK (2E)");
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("SNACK - 2.00EUR");
+                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
                 }
                 // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
-                    lcd.clear(); lcd.printf("Sel: CAFFE (1E)");
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("CAFFE - 1.00EUR");
+                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
                 }
                 // 4. THE (Verde)
                 else if (cmd == 4) {
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
-                    lcd.clear(); lcd.printf("Sel: THE (2E)");
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("THE   - 2.00EUR");
+                    lcd.setCursor(0, 1); lcd.printf("Selezionato!   ");
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
                 }
@@ -687,52 +695,42 @@ void updateMachine() {
             else if (idProdotto == 3) setRGB(1, 1, 0); // Caffe
             else setRGB(0, 1, 0);                      // The
 
-            buzzer = 0; lcd.setCursor(0, 0);
+            buzzer = 0;
             uint64_t tempoPassato = timerUltimaMoneta.elapsed_time().count();
-
-            // Fix timeout underflow con controllo esplicito
             int secondiMancanti = 0;
             if (tempoPassato < TIMEOUT_RESTO_AUTO) {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
-                // Mostra countdown erogazione solo per credito fresco (non residuo)
-                int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Erog. in %ds...", secondiErogazione);
-                lcd.printf("%s", buf);
-            } else if (credito >= prezzoSelezionato && creditoResiduo) {
-                // Credito residuo: mostra solo credito e timeout RESTO (no auto-erogazione)
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
-                lcd.printf("%s", buf);
-            } else {
-                if (credito > 0 && credito < prezzoSelezionato) {
-                    // Credito parziale - mostra timeout
-                    char buf[17];
-                    snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
-                    lcd.printf("%s", buf);
-                } else if (credito == 0) {
-                    // Nessun credito - mostra messaggio inserimento
-                    if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
-                    else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
-                    else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
-                    else                   lcd.printf("Ins.Mon x THE   ");
-                }
-            }
+            // RIGA 1: Nome prodotto + Prezzo (sempre visibile)
+            lcd.setCursor(0, 0);
+            char riga1[17];
+            if(idProdotto==1)      snprintf(riga1, sizeof(riga1), "ACQUA - 1.00EUR");
+            else if(idProdotto==2) snprintf(riga1, sizeof(riga1), "SNACK - 2.00EUR");
+            else if(idProdotto==3) snprintf(riga1, sizeof(riga1), "CAFFE - 1.00EUR");
+            else                   snprintf(riga1, sizeof(riga1), "THE   - 2.00EUR");
+            lcd.printf("%s", riga1);
 
+            // RIGA 2: Info stato/credito (dinamico)
             lcd.setCursor(0, 1);
-            char buf2[17];
-            if(credito > 0) {
-                snprintf(buf2, sizeof(buf2), "Cr:%d/%d [Blu=Esc", credito, prezzoSelezionato);
+            char riga2[17];
+
+            if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
+                // Countdown erogazione automatica
+                int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
+                snprintf(riga2, sizeof(riga2), "Erogaz. in %ds  ", secondiErogazione);
+            } else if (credito >= prezzoSelezionato && creditoResiduo) {
+                // Credito residuo: conferma manuale richiesta
+                snprintf(riga2, sizeof(riga2), "Conferma da App ");
+            } else if (credito > 0 && credito < prezzoSelezionato) {
+                // Credito parziale
+                int mancante = prezzoSelezionato - credito;
+                snprintf(riga2, sizeof(riga2), "Cr:%dE Manca:%dE ", credito, mancante);
             } else {
-                dhtMutex.lock();
-                int temp_copy = temp_int;
-                dhtMutex.unlock();
-                snprintf(buf2, sizeof(buf2), "Prz:%dE D:%03d T:%02d", prezzoSelezionato, dist, temp_copy);
+                // Nessun credito
+                snprintf(riga2, sizeof(riga2), "Inserisci moneta");
             }
-            lcd.printf("%s", buf2);
+            lcd.printf("%s", riga2);
 
             if (tastoAnnulla == 0 && credito > 0) {
                 lcd.clear(); lcd.printf("Annullato Manual"); thread_sleep_for(1000);
@@ -763,7 +761,12 @@ void updateMachine() {
 
         case EROGAZIONE:
             setRGB(1, 1, 0);
-            lcd.setCursor(0, 0); lcd.printf("Erogazione...   ");
+            // Mostra prodotto che si sta erogando
+            lcd.setCursor(0, 0);
+            if(idProdotto==1)      lcd.printf("Eroga ACQUA...  ");
+            else if(idProdotto==2) lcd.printf("Eroga SNACK...  ");
+            else if(idProdotto==3) lcd.printf("Eroga CAFFE...  ");
+            else                   lcd.printf("Eroga THE...    ");
             lcd.setCursor(0, 1); lcd.printf("Attendere       ");
 
             if (timerStato.elapsed_time().count() < 2000000) {
@@ -782,7 +785,8 @@ void updateMachine() {
                     timerUltimaMoneta.start();
                     creditoResiduo = true;      // Marca credito come residuo (no erogazione auto)
                     lcd.clear();
-                    lcd.printf("Credito: %dE", credito);
+                    lcd.setCursor(0, 0); lcd.printf("Credito: %d.00E ", credito);
+                    lcd.setCursor(0, 1); lcd.printf("Scegli prodotto ");
                     thread_sleep_for(1500);  // Mostra credito residuo
                 } else {
                     statoCorrente = ATTESA_MONETA;
@@ -798,7 +802,7 @@ void updateMachine() {
             lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
             lcd.setCursor(0, 1);
             char bufResto[17];
-            snprintf(bufResto, sizeof(bufResto), "Monete: %d", credito);
+            snprintf(bufResto, sizeof(bufResto), "Importo: %d.00E ", credito);
             lcd.printf("%s", bufResto);
 
             if ((timerStato.elapsed_time().count() % 400000) < 200000) buzzer = 1;
