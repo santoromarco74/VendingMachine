@@ -572,14 +572,23 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 class VendingGapEventHandler : public ble::Gap::EventHandler {
 public:
     void onConnectionComplete(const ble::ConnectionCompleteEvent &event) override {
-        // Invia dati iniziali quando l'app si connette
-        if (vendingServicePtr) {
-            thread_sleep_for(500); // Piccolo delay per stabilizzare la connessione
-            vendingServicePtr->updateStatus(credito, statoCorrente);
-            vendingServicePtr->updateTemp(temp_int);
-            vendingServicePtr->updateHum(hum_int);
-            printf("[BLE] Client connesso - dati iniziali inviati\n");
-        }
+        printf("[BLE] Client connesso - scheduling dati iniziali...\n");
+        // Schedula invio dati dopo 2.5s per dare tempo all'app di abilitare notifiche
+        // Usa event_queue per non bloccare il thread BLE
+        event_queue.call_in(std::chrono::milliseconds(2500), []() {
+            if (vendingServicePtr) {
+                dhtMutex.lock();
+                int temp_copy = temp_int;
+                int hum_copy = hum_int;
+                dhtMutex.unlock();
+
+                vendingServicePtr->updateStatus(credito, statoCorrente);
+                vendingServicePtr->updateTemp(temp_copy);
+                vendingServicePtr->updateHum(hum_copy);
+                printf("[BLE] Dati iniziali inviati: credito=%d, stato=%d, scorte=[%d,%d,%d,%d], T=%d, H=%d\n",
+                       credito, statoCorrente, scorte[1], scorte[2], scorte[3], scorte[4], temp_copy, hum_copy);
+            }
+        });
     }
 
     void onDisconnectionComplete(const ble::DisconnectionCompleteEvent &event) override {
@@ -856,6 +865,24 @@ void updateMachine() {
         }
 
         case EROGAZIONE:
+            // CONTROLLO SCORTE CRITICO: verifica PRIMA di erogare
+            if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] <= 0) {
+                lcdMutex.lock();
+                lcd.clear();
+                lcd.setCursor(0, 0); lcd.printf("PRODOTTO");
+                lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                lcdMutex.unlock();
+                setRGB(1, 0, 0); // Rosso
+                printf("[SCORTE] ERRORE: Tentativo erogazione con scorte=0 (prodotto %d)\n", idProdotto);
+                thread_sleep_for(2000);
+                // Vai a RESTO per rimborsare
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
+                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                break;
+            }
+
             setRGB(1, 1, 0);
             // Mostra prodotto che si sta erogando
             lcd.setCursor(0, 0);
