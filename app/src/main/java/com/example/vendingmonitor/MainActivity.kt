@@ -54,6 +54,12 @@ class MainActivity : ComponentActivity() {
     private var isScanning by mutableStateOf(false)
     private var selectedProduct by mutableStateOf("ACQUA")
 
+    // Stati scorte prodotti
+    private var scorteAcqua by mutableIntStateOf(5)
+    private var scorteSnack by mutableIntStateOf(5)
+    private var scorteCaffe by mutableIntStateOf(5)
+    private var scorteThe by mutableIntStateOf(5)
+
     private var bluetoothGatt: BluetoothGatt? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -114,10 +120,10 @@ class MainActivity : ComponentActivity() {
 
                     // RIGA 1: ACQUA & SNACK
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        ProductButton("ACQUA", "1.00 €", Color(0xFF00E5FF), selectedProduct == "ACQUA") {
+                        ProductButton("ACQUA", "1.00 €", Color(0xFF00E5FF), selectedProduct == "ACQUA", scorteAcqua) {
                             selectedProduct = "ACQUA"; writeCommand(1)
                         }
-                        ProductButton("SNACK", "2.00 €", Color(0xFFFF4081), selectedProduct == "SNACK") {
+                        ProductButton("SNACK", "2.00 €", Color(0xFFFF4081), selectedProduct == "SNACK", scorteSnack) {
                             selectedProduct = "SNACK"; writeCommand(2)
                         }
                     }
@@ -125,10 +131,10 @@ class MainActivity : ComponentActivity() {
 
                     // RIGA 2: CAFFÈ & THE (NUOVI)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        ProductButton("CAFFÈ", "1.00 €", Color(0xFFFFEB3B), selectedProduct == "CAFFE") {
+                        ProductButton("CAFFÈ", "1.00 €", Color(0xFFFFEB3B), selectedProduct == "CAFFE", scorteCaffe) {
                             selectedProduct = "CAFFE"; writeCommand(3)
                         }
-                        ProductButton("THE", "2.00 €", Color(0xFF69F0AE), selectedProduct == "THE") {
+                        ProductButton("THE", "2.00 €", Color(0xFF69F0AE), selectedProduct == "THE", scorteThe) {
                             selectedProduct = "THE"; writeCommand(4)
                         }
                     }
@@ -182,6 +188,22 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(10.dp))
             MachineStateBar()
+
+            // PULSANTE RIFORNIMENTO
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    Toast.makeText(this@MainActivity, "Rifornimento in corso...", Toast.LENGTH_SHORT).show()
+                    writeCommand(11)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3).copy(alpha = 0.2f)),
+                border = BorderStroke(1.dp, Color(0xFF2196F3)),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.fillMaxWidth().height(40.dp)
+            ) {
+                Text("RIFORNIMENTO SCORTE", color = Color(0xFF2196F3), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+
             Spacer(modifier = Modifier.weight(1f))
             ActionButton(permissionsLauncher)
         }
@@ -189,17 +211,35 @@ class MainActivity : ComponentActivity() {
 
     // --- COMPONENTI UI ---
     @Composable
-    fun ProductButton(name: String, price: String, color: Color, isSelected: Boolean, onClick: () -> Unit) {
-        val bg = if(isSelected) color.copy(alpha = 0.2f) else Color.Transparent
-        val border = if(isSelected) BorderStroke(2.dp, color) else BorderStroke(1.dp, Color.Gray)
+    fun ProductButton(name: String, price: String, color: Color, isSelected: Boolean, stock: Int, onClick: () -> Unit) {
+        val isOutOfStock = stock == 0
+        val bg = when {
+            isOutOfStock -> Color.DarkGray.copy(alpha = 0.3f)
+            isSelected -> color.copy(alpha = 0.2f)
+            else -> Color.Transparent
+        }
+        val border = when {
+            isOutOfStock -> BorderStroke(1.dp, Color.DarkGray)
+            isSelected -> BorderStroke(2.dp, color)
+            else -> BorderStroke(1.dp, Color.Gray)
+        }
+        val textColor = if(isOutOfStock) Color.DarkGray else if(isSelected) color else Color.White
+
         Card(
-            modifier = Modifier.size(width = 140.dp, height = 100.dp).clickable { onClick() },
+            modifier = Modifier.size(width = 140.dp, height = 100.dp).clickable(enabled = !isOutOfStock) { onClick() },
             colors = CardDefaults.cardColors(containerColor = bg),
             border = border
         ) {
             Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(name, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if(isSelected) color else Color.White)
-                Text(price, fontSize = 14.sp, color = Color.Gray)
+                Text(name, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
+                Text(price, fontSize = 14.sp, color = if(isOutOfStock) Color.DarkGray else Color.Gray)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if(isOutOfStock) "ESAURITO" else "Rim: $stock",
+                    fontSize = 10.sp,
+                    color = if(isOutOfStock) Color.Red else Color(0xFF4CAF50),
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -432,11 +472,15 @@ class MainActivity : ComponentActivity() {
             val hum = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
             runOnUiThread { humState = hum }
         }
-        else if (uuid == CHAR_STATUS_UUID && data.size >= 2) {
-            // Fix conversione byte: usa AND 0xFF per interpretare come unsigned (0-255 invece di -128-127)
+        else if (uuid == CHAR_STATUS_UUID && data.size >= 6) {
+            // Parsing 6 byte: [credito, stato, scorta_acqua, scorta_snack, scorta_caffe, scorta_the]
             runOnUiThread {
                 creditState = data[0].toInt() and 0xFF
                 machineState = data[1].toInt() and 0xFF
+                scorteAcqua = data[2].toInt() and 0xFF
+                scorteSnack = data[3].toInt() and 0xFF
+                scorteCaffe = data[4].toInt() and 0xFF
+                scorteThe = data[5].toInt() and 0xFF
             }
         }
     }
