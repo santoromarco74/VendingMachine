@@ -346,9 +346,17 @@ public:
         ble(_ble),
         tempChar(TEMP_CHAR_UUID, &initial_temp, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
         humChar(HUM_CHAR_UUID, &initial_hum, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
-        statusChar(STATUS_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
+        statusChar(STATUS_CHAR_UUID, statusData, 6, 6, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
         cmdChar(CMD_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE)
     {
+        // Inizializza statusData con valori di default
+        statusData[0] = 0; // credito
+        statusData[1] = 0; // stato
+        statusData[2] = 5; // scorte ACQUA
+        statusData[3] = 5; // scorte SNACK
+        statusData[4] = 5; // scorte CAFFE
+        statusData[5] = 5; // scorte THE
+
         GattCharacteristic *charTable[] = {&tempChar, &humChar, &statusChar, &cmdChar};
         GattService vendingService(VENDING_SERVICE_UUID, charTable, 4);
         ble.gattServer().addService(vendingService);
@@ -363,25 +371,28 @@ public:
     }
 
     void updateStatus(int credit, int state) {
-        // Invia: [credito, stato, scorte[1..4]]
-        uint8_t data[6] = {
-            (uint8_t)credit,
-            (uint8_t)state,
-            (uint8_t)scorte[1], // ACQUA
-            (uint8_t)scorte[2], // SNACK
-            (uint8_t)scorte[3], // CAFFE
-            (uint8_t)scorte[4]  // THE
-        };
-        ble.gattServer().write(statusChar.getValueHandle(), data, 6);
+        // Aggiorna array locale
+        statusData[0] = (uint8_t)credit;
+        statusData[1] = (uint8_t)state;
+        statusData[2] = (uint8_t)scorte[1]; // ACQUA
+        statusData[3] = (uint8_t)scorte[2]; // SNACK
+        statusData[4] = (uint8_t)scorte[3]; // CAFFE
+        statusData[5] = (uint8_t)scorte[4]; // THE
+
+        // Invia notifica BLE
+        ble.gattServer().write(statusChar.getValueHandle(), statusData, 6);
+        printf("[BLE] STATUS inviato: credito=%d, stato=%d, scorte=[%d,%d,%d,%d]\n",
+               credit, state, scorte[1], scorte[2], scorte[3], scorte[4]);
     }
 
     GattAttribute::Handle_t getCmdHandle() { return cmdChar.getValueHandle(); }
 
 private:
     BLE &ble;
+    uint8_t statusData[6]; // Buffer per STATUS: [credito, stato, scorte[1-4]]
     ReadOnlyGattCharacteristic<int> tempChar;
     ReadOnlyGattCharacteristic<int> humChar;
-    ReadOnlyGattCharacteristic<int> statusChar;
+    ReadWriteGattCharacteristic<uint8_t[6]> statusChar;
     WriteOnlyGattCharacteristic<int> cmdChar;
 };
 
