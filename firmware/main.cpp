@@ -319,6 +319,10 @@ int contatoreAssenza = 0;
 int ldrSampleCount = 0;     // Nuovo: contatore campioni per debouncing
 bool creditoResiduo = false; // Flag: true se credito da erogazione precedente
 
+// Cache LCD per stato ATTESA_MONETA (evita scritture inutili che aumentano race conditions)
+char lcdCacheRiga1[17] = "";
+char lcdCacheRiga2[17] = "";
+
 // --- GESTIONE SCORTE (Virtual Inventory) ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
 const int SCORTE_MAX = 5;        // Capacità massima per prodotto
@@ -745,6 +749,10 @@ void updateMachine() {
         buzzer = 0; statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
 
+        // Invalida cache LCD (forza riscrittura dopo cambio stato)
+        lcdCacheRiga1[0] = '\0';
+        lcdCacheRiga2[0] = '\0';
+
         // Aggiorna OLED solo al cambio stato (evita sfarfallio) - 4 righe font piccolo
         oled.clear();
 
@@ -819,16 +827,24 @@ void updateMachine() {
             }
             riga2[16] = '\0';
 
-            // Lock solo per le operazioni I2C (critico)
-            lcdMutex.lock();
-            lcd.setCursor(0, 0); lcd.printf("%s", riga1);
-            lcd.setCursor(0, 1); lcd.printf("%s", riga2);
-            lcdMutex.unlock();
+            // CACHE: Scrivi LCD SOLO se contenuto cambiato (riduce race conditions x10)
+            bool needUpdate = (strcmp(riga1, lcdCacheRiga1) != 0 || strcmp(riga2, lcdCacheRiga2) != 0);
+            if (needUpdate) {
+                lcdMutex.lock();
+                lcd.setCursor(0, 0); lcd.printf("%s", riga1);
+                lcd.setCursor(0, 1); lcd.printf("%s", riga2);
+                lcdMutex.unlock();
+
+                // Aggiorna cache
+                strncpy(lcdCacheRiga1, riga1, 17);
+                strncpy(lcdCacheRiga2, riga2, 17);
+            }
 
             if (tastoAnnulla == 0 && credito > 0) {
                 lcdMutex.lock();
                 lcd.clear(); lcd.printf("Annullato Manual");
                 lcdMutex.unlock();
+                lcdCacheRiga1[0] = '\0'; lcdCacheRiga2[0] = '\0'; // Invalida cache
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
@@ -837,6 +853,7 @@ void updateMachine() {
                 lcdMutex.lock();
                 lcd.clear(); lcd.printf("Tempo Scaduto!");
                 lcdMutex.unlock();
+                lcdCacheRiga1[0] = '\0'; lcdCacheRiga2[0] = '\0'; // Invalida cache
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
@@ -846,6 +863,7 @@ void updateMachine() {
                 lcdMutex.lock();
                 lcd.clear(); lcd.printf("Tempo Scaduto!");
                 lcdMutex.unlock();
+                lcdCacheRiga1[0] = '\0'; lcdCacheRiga2[0] = '\0'; // Invalida cache
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
