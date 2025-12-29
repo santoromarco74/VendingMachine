@@ -747,6 +747,10 @@ void updateMachine() {
         i2cMutex.lock();
         lcd.clear();
         i2cMutex.unlock();
+
+        // Delay per stabilizzare bus I2C dopo clear
+        thread_sleep_for(20);
+
         buzzer = 0; statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
 
