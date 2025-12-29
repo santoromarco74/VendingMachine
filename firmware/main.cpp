@@ -773,8 +773,10 @@ void updateMachine() {
     switch (statoCorrente) {
         case RIPOSO:
             setRGB(0, 1, 0); buzzer = 0;
+            lcdMutex.lock();
             lcd.setCursor(0, 0); lcd.printf("Avvicinati per  ");
             lcd.setCursor(0, 1); lcd.printf("iniziare...     ");
+            lcdMutex.unlock();
 
             if (dist < DISTANZA_ATTIVA) {
                 if (++contatorePresenza > FILTRO_INGRESSO) statoCorrente = ATTESA_MONETA;
@@ -795,38 +797,33 @@ void updateMachine() {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            // RIGA 1: Nome prodotto + Prezzo (sempre visibile)
-            lcd.setCursor(0, 0);
-            char riga1[17];
+            // Prepara dati LCD fuori dal lock (veloce)
+            char riga1[17], riga2[17];
             if(idProdotto==1)      snprintf(riga1, sizeof(riga1), "ACQUA - 1.00EUR");
             else if(idProdotto==2) snprintf(riga1, sizeof(riga1), "SNACK - 2.00EUR");
             else if(idProdotto==3) snprintf(riga1, sizeof(riga1), "CAFFE - 1.00EUR");
             else                   snprintf(riga1, sizeof(riga1), "THE   - 2.00EUR");
-            lcd.printf("%s", riga1);
 
-            // RIGA 2: Info stato/credito (dinamico)
-            lcd.setCursor(0, 1);
-            char riga2[17];
-            memset(riga2, ' ', 16);  // Pre-riempi con spazi per evitare caratteri strani
+            memset(riga2, ' ', 16);
             riga2[16] = '\0';
-
             if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
-                // Countdown erogazione automatica + mostra credito
                 int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
                 snprintf(riga2, 16, "Cr:%dE Erog:%ds", credito, secondiErogazione);
             } else if (credito >= prezzoSelezionato && creditoResiduo) {
-                // Credito residuo: conferma manuale richiesta
                 snprintf(riga2, 16, "Cr:%dE ConfApp", credito);
             } else if (credito > 0 && credito < prezzoSelezionato) {
-                // Credito parziale
                 int mancante = prezzoSelezionato - credito;
                 snprintf(riga2, 16, "Cr:%dE Manca%dE", credito, mancante);
             } else {
-                // Nessun credito
                 snprintf(riga2, 16, "Inserisci moneta");
             }
-            riga2[16] = '\0';  // Assicura terminazione
-            lcd.printf("%s", riga2);
+            riga2[16] = '\0';
+
+            // Lock solo per le operazioni I2C (critico)
+            lcdMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("%s", riga1);
+            lcd.setCursor(0, 1); lcd.printf("%s", riga2);
+            lcdMutex.unlock();
 
             if (tastoAnnulla == 0 && credito > 0) {
                 lcdMutex.lock();
@@ -884,13 +881,15 @@ void updateMachine() {
             }
 
             setRGB(1, 1, 0);
-            // Mostra prodotto che si sta erogando
+            // Mostra prodotto che si sta erogando (protetto con mutex)
+            lcdMutex.lock();
             lcd.setCursor(0, 0);
             if(idProdotto==1)      lcd.printf("Eroga ACQUA...  ");
             else if(idProdotto==2) lcd.printf("Eroga SNACK...  ");
             else if(idProdotto==3) lcd.printf("Eroga CAFFE...  ");
             else                   lcd.printf("Eroga THE...    ");
             lcd.setCursor(0, 1); lcd.printf("Attendere       ");
+            lcdMutex.unlock();
 
             if (timerStato.elapsed_time().count() < 2000000) {
                 buzzer = 1;
@@ -936,11 +935,13 @@ void updateMachine() {
 
         case RESTO: {
             setRGB(1, 0, 1);
-            lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
-            lcd.setCursor(0, 1);
             char bufResto[17];
             snprintf(bufResto, sizeof(bufResto), "Importo: %d.00E ", credito);
-            lcd.printf("%s", bufResto);
+
+            lcdMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
+            lcd.setCursor(0, 1); lcd.printf("%s", bufResto);
+            lcdMutex.unlock();
 
             if ((timerStato.elapsed_time().count() % 400000) < 200000) buzzer = 1;
             else buzzer = 0;
@@ -956,14 +957,17 @@ void updateMachine() {
             if (blinkTimer % 2 == 0) { setRGB(1, 0, 0); buzzer = 1; }
             else { setRGB(0, 0, 0); buzzer = 0; }
 
-            lcd.setCursor(0, 0); lcd.printf("! ALLARME TEMP !");
-            lcd.setCursor(0, 1);
             char bufErr[17];
             dhtMutex.lock();
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
             int temp_check = temp_int;
             dhtMutex.unlock();
-            lcd.printf("%s", bufErr);
+
+            lcdMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("! ALLARME TEMP !");
+            lcd.setCursor(0, 1); lcd.printf("%s", bufErr);
+            lcdMutex.unlock();
+
             if (temp_check <= (SOGLIA_TEMP - 2)) statoCorrente = RIPOSO;
             break;
         }
