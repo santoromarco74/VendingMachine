@@ -467,12 +467,15 @@ class MainActivity : ComponentActivity() {
         if (uuid == CHAR_TEMP_UUID && data.size >= 4) {
             val temp = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
             runOnUiThread { tempState = temp }
+            android.util.Log.d("VendingMonitor", "Temp aggiornata: $temp°C")
         }
         else if (uuid == CHAR_HUM_UUID && data.size >= 4) {
             val hum = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).int
             runOnUiThread { humState = hum }
+            android.util.Log.d("VendingMonitor", "Umidità aggiornata: $hum%")
         }
         else if (uuid == CHAR_STATUS_UUID) {
+            android.util.Log.d("VendingMonitor", "STATUS ricevuto: ${data.size} bytes = ${data.joinToString(",") { (it.toInt() and 0xFF).toString() }}")
             if (data.size >= 6) {
                 // Parsing 6 byte: [credito, stato, scorta_acqua, scorta_snack, scorta_caffe, scorta_the]
                 runOnUiThread {
@@ -482,12 +485,14 @@ class MainActivity : ComponentActivity() {
                     scorteSnack = data[3].toInt() and 0xFF
                     scorteCaffe = data[4].toInt() and 0xFF
                     scorteThe = data[5].toInt() and 0xFF
+                    android.util.Log.d("VendingMonitor", "Aggiornato: credito=$creditState, stato=$machineState, scorte=[$scorteAcqua,$scorteSnack,$scorteCaffe,$scorteThe]")
                 }
             } else if (data.size >= 2) {
                 // Fallback: parsing 2 byte legacy [credito, stato]
                 runOnUiThread {
                     creditState = data[0].toInt() and 0xFF
                     machineState = data[1].toInt() and 0xFF
+                    android.util.Log.d("VendingMonitor", "Fallback 2-byte: credito=$creditState, stato=$machineState")
                 }
             }
         }
