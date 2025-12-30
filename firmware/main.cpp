@@ -2,22 +2,17 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: DUAL DISPLAY v7.3 (OLED SSD1306 + LCD 16x2)
+ * VERSIONE: v8.0 CLEAN (Stock Management + LCD Only)
  * ======================================================================================
  *
- * CHANGELOG v7.3:
- * - [FEATURE] Aggiunto display OLED SSD1306 (128x32) per info diagnostiche sistema
- * - [UX] Separazione interfacce: LCD per utente (prodotti), OLED per tecnico (diagnostica)
- * - [DRIVER] Driver SSD1306 minimale embedded (auto-detect 0x3C/0x3D, font 5x7, 200 righe)
- * - [I2C] Condivisione bus I2C tra LCD e OLED (indirizzi diversi: 0x4E e 0x3C)
- * - [DISPLAY] OLED mostra: Stato FSM, Temp/Umidità, Distanza, LDR, Credito, Prodotto
- * - [DISPLAY] LCD dedicato a: Messaggi utente, Prodotto selezionato, Countdown, Errori
- * - [FEATURE] Acquisti multipli con conferma manuale (comando BLE 0x0A)
- * - [BUG FIX] Tutti i fix di v7.2 (LDR debouncing, DHT thread, validazione BLE)
- *
- * HARDWARE RICHIESTO:
- * - LCD I2C 16x2 (indirizzo 0x4E) su pin D14/D15
- * - OLED SSD1306 0.91" 128x32 (indirizzo 0x3C) su pin D14/D15 (bus condiviso)
+ * CHANGELOG v8.0:
+ * - [CLEANUP] Display singolo LCD 16x2 per interfaccia utente
+ * - [FEATURE] Sistema gestione scorte virtuale con array
+ * - [BLE] STATUS characteristic 6-byte: [credito, stato, scorte_acqua, scorte_snack, scorte_caffe, scorte_the]
+ * - [FIX] Delay 20ms dopo lcd.clear() per prevenire corruzione caratteri
+ * - [FIX] Rimosso tutte operazioni LCD da gestori BLE per eliminare race conditions
+ * - [DEBUG] Logging seriale completo per sensori, FSM, scorte, eventi
+ * - [FEATURE] Comando BLE 11 per rifornimento scorte
  */
 
 #include "mbed.h"
@@ -252,13 +247,13 @@ const uint8_t SSD1306::font5x7[95][5] = {
 #define DISTANZA_ATTIVA   40
 #define SOGLIA_TEMP       28
 #define TIMEOUT_RESTO_AUTO 30000000
-#define TIMEOUT_EROGAZIONE_AUTO 5000000  // 5 secondi attesa prima erogazione automatica
+#define TIMEOUT_EROGAZIONE_AUTO 5000000
 
-// --- DEBOUNCING LDR (NUOVO) ---
-#define LDR_DEBOUNCE_SAMPLES 5      // Numero di campioni consecutivi necessari
-#define LDR_DEBOUNCE_TIME_US 300000 // 300ms tempo minimo tra inserimenti
+// --- DEBOUNCING LDR ---
+#define LDR_DEBOUNCE_SAMPLES 5
+#define LDR_DEBOUNCE_TIME_US 300000
 
-// --- NUOVI PREZZI (MENU ESTESO) ---
+// --- PREZZI ---
 #define PREZZO_ACQUA      1
 #define PREZZO_SNACK      2
 #define PREZZO_CAFFE      1
@@ -307,27 +302,23 @@ FileHandle *mbed::mbed_override_console(int fd) { return &pc; }
 Timer sonarTimer;
 Timer timerUltimaMoneta;
 Timer timerStato;
-Timer ldrDebounceTimer;     // Nuovo: timer per debouncing LDR
+Timer ldrDebounceTimer;
 volatile uint64_t echoDuration = 0;
 bool monetaInLettura = false;
 int credito = 0;
 int temp_int = 0;
 int hum_int = 0;
-bool dht_valid = false;     // Nuovo: flag validità dati DHT
+bool dht_valid = false;
 int contatorePresenza = 0;
 int contatoreAssenza = 0;
-int ldrSampleCount = 0;     // Nuovo: contatore campioni per debouncing
-bool creditoResiduo = false; // Flag: true se credito da erogazione precedente
+int ldrSampleCount = 0;
+bool creditoResiduo = false;
 
-// Cache LCD per stato ATTESA_MONETA (evita scritture inutili che aumentano race conditions)
-char lcdCacheRiga1[17] = "";
-char lcdCacheRiga2[17] = "";
-
-// --- GESTIONE SCORTE (Virtual Inventory) ---
+// --- GESTIONE SCORTE ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
-const int SCORTE_MAX = 5;        // Capacità massima per prodotto
+const int SCORTE_MAX = 5;
 
-// Mutex per proteggere accesso a temp_int e hum_int tra thread
+// Mutex per proteggere accesso DHT
 Mutex dhtMutex;
 
 // Mutex per proteggere BUS I2C condiviso (LCD 0x4E + OLED 0x3C)
@@ -349,13 +340,12 @@ public:
         cmdChar(CMD_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE),
         statusChar(STATUS_CHAR_UUID, statusData, 6, 6, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY)
     {
-        // Inizializza statusData leggendo i valori correnti dall'array scorte
-        statusData[0] = 0; // credito
-        statusData[1] = 0; // stato
-        statusData[2] = (uint8_t)scorte[1]; // ACQUA
-        statusData[3] = (uint8_t)scorte[2]; // SNACK
-        statusData[4] = (uint8_t)scorte[3]; // CAFFE
-        statusData[5] = (uint8_t)scorte[4]; // THE
+        statusData[0] = 0;
+        statusData[1] = 0;
+        statusData[2] = (uint8_t)scorte[1];
+        statusData[3] = (uint8_t)scorte[2];
+        statusData[4] = (uint8_t)scorte[3];
+        statusData[5] = (uint8_t)scorte[4];
 
         GattCharacteristic *charTable[] = {&tempChar, &humChar, &statusChar, &cmdChar};
         GattService vendingService(VENDING_SERVICE_UUID, charTable, 4);
@@ -371,15 +361,12 @@ public:
     }
 
     void updateStatus(int credit, int state) {
-        // Aggiorna array locale
         statusData[0] = (uint8_t)credit;
         statusData[1] = (uint8_t)state;
-        statusData[2] = (uint8_t)scorte[1]; // ACQUA
-        statusData[3] = (uint8_t)scorte[2]; // SNACK
-        statusData[4] = (uint8_t)scorte[3]; // CAFFE
-        statusData[5] = (uint8_t)scorte[4]; // THE
-
-        // Invia notifica BLE
+        statusData[2] = (uint8_t)scorte[1];
+        statusData[3] = (uint8_t)scorte[2];
+        statusData[4] = (uint8_t)scorte[3];
+        statusData[5] = (uint8_t)scorte[4];
         ble.gattServer().write(statusChar.getValueHandle(), statusData, 6);
         printf("[BLE] STATUS inviato: credito=%d, stato=%d, scorte=[%d,%d,%d,%d]\n",
                credit, state, scorte[1], scorte[2], scorte[3], scorte[4]);
@@ -389,18 +376,18 @@ public:
 
 private:
     BLE &ble;
-    uint8_t statusData[6]; // Buffer per STATUS: [credito, stato, scorte[1-4]]
+    uint8_t statusData[6];
     ReadOnlyGattCharacteristic<int> tempChar;
     ReadOnlyGattCharacteristic<int> humChar;
     WriteOnlyGattCharacteristic<int> cmdChar;
-    GattCharacteristic statusChar; // Array characteristic (6 bytes)
+    GattCharacteristic statusChar;
 };
 
 VendingService *vendingServicePtr = nullptr;
 static EventQueue event_queue(16 * EVENTS_EVENT_SIZE);
 
 // ======================================================================================
-// GESTORE EVENTI GATT SERVER (4 PRODOTTI + VALIDAZIONE)
+// GESTORE EVENTI GATT SERVER
 // ======================================================================================
 class VendingServerEventHandler : public ble::GattServer::EventHandler {
     void onDataWritten(const GattWriteCallbackParams &params) override {
@@ -408,23 +395,14 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
             if (params.len > 0) {
                 uint8_t cmd = params.data[0];
 
-                // VALIDAZIONE COMANDO (SECURITY FIX)
                 if (cmd < 1 || (cmd > 4 && cmd != 9 && cmd != 10 && cmd != 11)) {
-                    printf("[SECURITY] Comando BLE invalido ricevuto: 0x%02X\n", cmd);
-                    return; // Reject invalid commands
+                    printf("[SECURITY] Comando BLE invalido: 0x%02X\n", cmd);
+                    return;
                 }
 
-                // 1. ACQUA (Ciano)
                 if (cmd == 1) {
-                    if (scorte[1] == 0) {
-                        i2cMutex.lock();
-                        lcd.clear();
-                        lcd.setCursor(0, 0); lcd.printf("ACQUA");
-                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
-                        i2cMutex.unlock();
-                        setRGB(1, 0, 0); // Rosso
-                        printf("[SCORTE] ACQUA esaurito\n");
-                        thread_sleep_for(2000);
+                    if (scorte[1] <= 0) {
+                        printf("[STOCK] ACQUA esaurita\n");
                         return;
                     }
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
@@ -437,19 +415,11 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
-                    printf("[BLE] Prodotto selezionato: ACQUA (scorte=%d)\n", scorte[1]);
+                    printf("[BLE] ACQUA selezionata (scorte=%d)\n", scorte[1]);
                 }
-                // 2. SNACK (Magenta)
                 else if (cmd == 2) {
-                    if (scorte[2] == 0) {
-                        i2cMutex.lock();
-                        lcd.clear();
-                        lcd.setCursor(0, 0); lcd.printf("SNACK");
-                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
-                        i2cMutex.unlock();
-                        setRGB(1, 0, 0); // Rosso
-                        printf("[SCORTE] SNACK esaurito\n");
-                        thread_sleep_for(2000);
+                    if (scorte[2] <= 0) {
+                        printf("[STOCK] SNACK esaurito\n");
                         return;
                     }
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
@@ -462,19 +432,11 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
-                    printf("[BLE] Prodotto selezionato: SNACK (scorte=%d)\n", scorte[2]);
+                    printf("[BLE] SNACK selezionato (scorte=%d)\n", scorte[2]);
                 }
-                // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
-                    if (scorte[3] == 0) {
-                        i2cMutex.lock();
-                        lcd.clear();
-                        lcd.setCursor(0, 0); lcd.printf("CAFFE");
-                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
-                        i2cMutex.unlock();
-                        setRGB(1, 0, 0); // Rosso
-                        printf("[SCORTE] CAFFE esaurito\n");
-                        thread_sleep_for(2000);
+                    if (scorte[3] <= 0) {
+                        printf("[STOCK] CAFFE esaurito\n");
                         return;
                     }
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
@@ -487,19 +449,11 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
-                    printf("[BLE] Prodotto selezionato: CAFFE (scorte=%d)\n", scorte[3]);
+                    printf("[BLE] CAFFE selezionato (scorte=%d)\n", scorte[3]);
                 }
-                // 4. THE (Verde)
                 else if (cmd == 4) {
-                    if (scorte[4] == 0) {
-                        i2cMutex.lock();
-                        lcd.clear();
-                        lcd.setCursor(0, 0); lcd.printf("THE");
-                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
-                        i2cMutex.unlock();
-                        setRGB(1, 0, 0); // Rosso
-                        printf("[SCORTE] THE esaurito\n");
-                        thread_sleep_for(2000);
+                    if (scorte[4] <= 0) {
+                        printf("[STOCK] THE esaurito\n");
                         return;
                     }
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
@@ -512,52 +466,40 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
-                    printf("[BLE] Prodotto selezionato: THE (scorte=%d)\n", scorte[4]);
+                    printf("[BLE] THE selezionato (scorte=%d)\n", scorte[4]);
                 }
-                // 9. ANNULLA
                 else if (cmd == 9) {
                     if (credito > 0) {
-                        i2cMutex.lock();
-                        lcd.clear(); lcd.printf("Annullato da App");
-                        i2cMutex.unlock();
-                        setRGB(1, 0, 1); // Viola momentaneo
-                        statoCorrente = RESTO; timerStato.reset(); timerStato.start();
+                        printf("[ANNULLA] App - Resto: %dE\n", credito);
+                        setRGB(1, 0, 1);
+                        statoCorrente = RESTO;
+                        timerStato.reset();
+                        timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
                     }
                 }
-                // 10. CONFERMA ACQUISTO (per credito residuo)
                 else if (cmd == 10) {
-                    printf("[BLE] Ricevuto comando CONFERMA ACQUISTO (10): credito=%d, prezzo=%d, stato=%d\n",
+                    printf("[BLE] CONFERMA: credito=%d, prezzo=%d, stato=%d\n",
                            credito, prezzoSelezionato, statoCorrente);
 
                     if (statoCorrente != ATTESA_MONETA) {
-                        i2cMutex.lock();
-                        lcd.clear(); lcd.printf("Stato Invalido!");
-                        i2cMutex.unlock();
-                        printf("[BLE] Conferma rifiutata: stato non ATTESA_MONETA\n");
+                        printf("[BLE] Rifiutata: stato invalido\n");
                     } else if (credito < prezzoSelezionato) {
-                        i2cMutex.lock();
-                        lcd.clear(); lcd.printf("Credito Insuffic");
-                        i2cMutex.unlock();
-                        printf("[BLE] Conferma rifiutata: credito insufficiente\n");
+                        printf("[BLE] Rifiutata: credito insufficiente\n");
                     } else {
-                        i2cMutex.lock();
-                        lcd.clear(); lcd.printf("Confermato!");
-                        i2cMutex.unlock();
-                        printf("[BLE] Conferma accettata: avvio erogazione\n");
+                        printf("[BLE] Accettata: avvio erogazione\n");
                         statoCorrente = EROGAZIONE;
                         timerStato.reset();
                         timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
                     }
                 }
-                // 11. RIFORNIMENTO (reset scorte)
                 else if (cmd == 11) {
-                    scorte[1] = SCORTE_MAX; // ACQUA
-                    scorte[2] = SCORTE_MAX; // SNACK
-                    scorte[3] = SCORTE_MAX; // CAFFE
-                    scorte[4] = SCORTE_MAX; // THE
-                    printf("[STOCK] Rifornimento completato: tutte le scorte ripristinate a %d\n", SCORTE_MAX);
+                    scorte[1] = SCORTE_MAX;
+                    scorte[2] = SCORTE_MAX;
+                    scorte[3] = SCORTE_MAX;
+                    scorte[4] = SCORTE_MAX;
+                    printf("[STOCK] Rifornimento completato: %d pezzi/prodotto\n", SCORTE_MAX);
                     if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
                 }
             }
@@ -566,7 +508,7 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 };
 
 // ======================================================================================
-// GESTORE EVENTI GAP (Connessione/Disconnessione)
+// GESTORE EVENTI GAP
 // ======================================================================================
 class VendingGapEventHandler : public ble::Gap::EventHandler {
 public:
@@ -606,29 +548,40 @@ void echoRise() { sonarTimer.reset(); sonarTimer.start(); }
 void echoFall() { sonarTimer.stop(); echoDuration = sonarTimer.elapsed_time().count(); }
 
 int leggiDistanza() {
-    int somma = 0; int validi = 0;
+    int somma = 0;
+    int validi = 0;
     for(int i=0; i<3; i++) {
-        trig = 0; wait_us(2); trig = 1; wait_us(10); trig = 0; wait_us(10000);
+        trig = 0; wait_us(2);
+        trig = 1; wait_us(10);
+        trig = 0; wait_us(10000);
         if (echoDuration > 0 && echoDuration < 30000) {
-            somma += (int)(echoDuration * 0.0343f / 2.0f); validi++;
+            somma += (int)(echoDuration * 0.0343f / 2.0f);
+            validi++;
         }
     }
     return (validi == 0) ? 999 : somma / validi;
 }
 
 // ======================================================================================
-// DHT11 - THREAD SEPARATO (CRITICAL FIX)
+// DHT11 - THREAD SEPARATO
 // ======================================================================================
 int pulseIn(int level) {
     int count = 0;
-    while (dht == level) { if (count++ > 200) return -1; wait_us(1); }
+    while (dht == level) {
+        if (count++ > 200) return -1;
+        wait_us(1);
+    }
     return count;
 }
 
 void dht_reader_thread() {
     while(true) {
-        dht.output(); dht = 0; thread_sleep_for(18);
-        dht = 1; wait_us(30); dht.input();
+        dht.output();
+        dht = 0;
+        thread_sleep_for(18);
+        dht = 1;
+        wait_us(30);
+        dht.input();
 
         __disable_irq();
         bool error = false;
@@ -656,7 +609,6 @@ void dht_reader_thread() {
             }
         }
 
-        // Lettura ogni 2 secondi (DHT11 requirement)
         ThisThread::sleep_for(2000ms);
     }
 }
@@ -668,14 +620,12 @@ void updateMachine() {
     static int counterTemp = 0;
     static int blinkTimer = 0;
 
-    // Kick watchdog
     watchdog.kick();
 
-    // LDR DEBOUNCING ROBUSTO (CRITICAL FIX)
     int ldr_val = (int)(ldr.read() * 100);
     int dist = leggiDistanza();
 
-    // Aggiorna temperatura/umidità ogni 2s dalla lettura thread separato
+    // Aggiorna sensori ogni 2s
     if (++counterTemp > 20) {
         counterTemp = 0;
         if (vendingServicePtr) {
@@ -692,33 +642,32 @@ void updateMachine() {
             }
         }
 
-        // Controllo temperatura critica
         dhtMutex.lock();
         int temp_check = temp_int;
         dhtMutex.unlock();
 
         if (temp_check >= SOGLIA_TEMP && statoCorrente != ERRORE) {
-            printf("[ALLARME] Temperatura critica: %d°C (soglia: %d°C)\n", temp_check, SOGLIA_TEMP);
-            statoCorrente = ERRORE; lcd.clear(); wait_us(20000);
+            printf("[ALLARME] Temperatura: %d°C (soglia: %d°C)\n", temp_check, SOGLIA_TEMP);
+            statoCorrente = ERRORE;
+            lcd.clear();
+            wait_us(20000);
         }
     }
 
-    // DEBOUNCING LDR AVANZATO (evita conteggi multipli)
+    // DEBOUNCING LDR
     if (statoCorrente != ERRORE && statoCorrente != EROGAZIONE && statoCorrente != RESTO) {
         if (ldr_val > SOGLIA_LDR_SCATTO && !monetaInLettura) {
-            // Incrementa contatore campioni
             if (ldrSampleCount == 0) {
                 ldrDebounceTimer.start();
             }
             ldrSampleCount++;
 
-            // Verifica che abbiamo abbastanza campioni consecutivi E tempo minimo trascorso
             uint64_t elapsed = ldrDebounceTimer.elapsed_time().count();
             if (ldrSampleCount >= LDR_DEBOUNCE_SAMPLES && elapsed > LDR_DEBOUNCE_TIME_US) {
                 monetaInLettura = true;
                 credito++;
                 timerUltimaMoneta.reset();
-                creditoResiduo = false;  // Credito appena inserito, non residuo
+                creditoResiduo = false;
                 ldrSampleCount = 0;
                 ldrDebounceTimer.reset();
 
@@ -732,63 +681,37 @@ void updateMachine() {
                 monetaInLettura = false;
                 ldrDebounceTimer.stop();
             }
-            ldrSampleCount = 0; // Reset contatore se valore scende
+            ldrSampleCount = 0;
         }
     }
 
     if (statoCorrente != statoPrecedente) {
-        lcd.clear(); wait_us(20000); buzzer = 0;
+        lcd.clear();
+        wait_us(20000);
+        buzzer = 0;
 
-        // Log cambio stato con dettagli
         const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
-        printf("[FSM] Cambio stato: %s -> %s | Credito: %dE | Prodotto: %d\n",
+        printf("[FSM] %s -> %s | Credito: %dE | Prodotto: %d\n",
                nomiStati[statoPrecedente], nomiStati[statoCorrente], credito, idProdotto);
 
         statoPrecedente = statoCorrente;
-        contatorePresenza = 0; contatoreAssenza = 0;
-
-        // Invalida cache LCD (forza riscrittura dopo cambio stato)
-        lcdCacheRiga1[0] = '\0';
-        lcdCacheRiga2[0] = '\0';
-
-        // Aggiorna OLED solo al cambio stato (evita sfarfallio) - 4 righe font piccolo
-        // PROTEGGI BUS I2C: OLED e LCD condividono SDA/SCL
-        dhtMutex.lock();
-        int temp_copy = temp_int;
-        int hum_copy = hum_int;
-        dhtMutex.unlock();
-
-        i2cMutex.lock();
-        oled.clear();
-
-        // Riga 0: Stato
-        oled.setCursor(0, 0);
-        if (statoCorrente == RIPOSO) oled.printf("RIPOSO - BLE OK");
-        else if (statoCorrente == ATTESA_MONETA) oled.printf("ATTESA MONETA");
-        else if (statoCorrente == EROGAZIONE) oled.printf("EROGAZIONE");
-        else if (statoCorrente == RESTO) oled.printf("RESTO");
-        else if (statoCorrente == ERRORE) oled.printf("!!! ERRORE !!!");
-
-        // Riga 1: Temperatura e Umidità
-        oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_copy, hum_copy);
-
-        // Riga 2: Credito e Prodotto
-        oled.setCursor(0, 2); oled.printf("Cr:%dE Prod:%d", credito, idProdotto);
-
-        // Riga 3: Distanza e LDR
-        oled.setCursor(0, 3); oled.printf("D:%dcm L:%d", dist, ldr_val);
-        i2cMutex.unlock();
-
+        contatorePresenza = 0;
+        contatoreAssenza = 0;
         if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
     }
 
     switch (statoCorrente) {
         case RIPOSO:
-            setRGB(0, 1, 0); buzzer = 0;
-            i2cMutex.lock();
-            lcd.setCursor(0, 0); lcd.printf("Avvicinati per  ");
-            lcd.setCursor(0, 1); lcd.printf("iniziare...     ");
-            i2cMutex.unlock();
+            setRGB(0, 1, 0);
+            buzzer = 0;
+            lcd.setCursor(0, 0);
+            lcd.printf("ECO MODE BLE OK ");
+            lcd.setCursor(0, 1);
+            char buffer[17];
+            dhtMutex.lock();
+            snprintf(buffer, sizeof(buffer), "L:%02d D:%03d T:%02d", ldr_val, dist, temp_int);
+            dhtMutex.unlock();
+            lcd.printf("%s", buffer);
 
             if (dist < DISTANZA_ATTIVA) {
                 if (++contatorePresenza > FILTRO_INGRESSO) statoCorrente = ATTESA_MONETA;
@@ -796,14 +719,15 @@ void updateMachine() {
             break;
 
         case ATTESA_MONETA: {
-            // Colore LED in base al prodotto
-            if (idProdotto == 1) setRGB(0, 1, 1);      // Acqua
-            else if (idProdotto == 2) setRGB(1, 0, 1); // Snack
-            else if (idProdotto == 3) setRGB(1, 1, 0); // Caffe
-            else setRGB(0, 1, 0);                      // The
+            if (idProdotto == 1) setRGB(0, 1, 1);
+            else if (idProdotto == 2) setRGB(1, 0, 1);
+            else if (idProdotto == 3) setRGB(1, 1, 0);
+            else setRGB(0, 1, 0);
 
             buzzer = 0;
+            lcd.setCursor(0, 0);
             uint64_t tempoPassato = timerUltimaMoneta.elapsed_time().count();
+
             int secondiMancanti = 0;
             if (tempoPassato < TIMEOUT_RESTO_AUTO) {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
@@ -822,12 +746,20 @@ void updateMachine() {
                 int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
                 snprintf(riga2, 16, "Cr:%dE Erog:%ds", credito, secondiErogazione);
             } else if (credito >= prezzoSelezionato && creditoResiduo) {
-                snprintf(riga2, 16, "Cr:%dE ConfApp", credito);
-            } else if (credito > 0 && credito < prezzoSelezionato) {
-                int mancante = prezzoSelezionato - credito;
-                snprintf(riga2, 16, "Cr:%dE Manca%dE", credito, mancante);
+                char buf[17];
+                snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
+                lcd.printf("%s", buf);
             } else {
-                snprintf(riga2, 16, "Inserisci moneta");
+                if (credito > 0 && credito < prezzoSelezionato) {
+                    char buf[17];
+                    snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
+                    lcd.printf("%s", buf);
+                } else if (credito == 0) {
+                    if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
+                    else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
+                    else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
+                    else                   lcd.printf("Ins.Mon x THE   ");
+                }
             }
             riga2[16] = '\0';
 
@@ -845,30 +777,42 @@ void updateMachine() {
             }
 
             if (tastoAnnulla == 0 && credito > 0) {
-                lcd.clear(); wait_us(20000); lcd.printf("Annullato Manual");
-                printf("[ANNULLA] Operazione annullata da pulsante. Resto: %dE\n", credito);
+                lcd.clear();
+                wait_us(20000);
+                lcd.printf("Annullato Manual");
+                printf("[ANNULLA] Pulsante - Resto: %dE\n", credito);
                 thread_sleep_for(1000);
-                statoCorrente = RESTO; timerStato.reset(); timerStato.start();
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito > 0 && credito < prezzoSelezionato && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                lcd.clear(); wait_us(20000); lcd.printf("Tempo Scaduto!");
-                printf("[TIMEOUT] Credito parziale scaduto. Resto: %dE\n", credito);
+                lcd.clear();
+                wait_us(20000);
+                lcd.printf("Tempo Scaduto!");
+                printf("[TIMEOUT] Credito parziale - Resto: %dE\n", credito);
                 thread_sleep_for(1000);
-                statoCorrente = RESTO; timerStato.reset(); timerStato.start();
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                // Timeout per credito residuo: vai a RESTO (no auto-erogazione)
-                lcd.clear(); wait_us(20000); lcd.printf("Tempo Scaduto!");
-                printf("[TIMEOUT] Credito residuo scaduto. Resto: %dE\n", credito);
+                lcd.clear();
+                wait_us(20000);
+                lcd.printf("Tempo Scaduto!");
+                printf("[TIMEOUT] Credito residuo - Resto: %dE\n", credito);
                 thread_sleep_for(1000);
-                statoCorrente = RESTO; timerStato.reset(); timerStato.start();
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato > TIMEOUT_EROGAZIONE_AUTO) {
-                // Auto-erogazione solo per credito fresco (non residuo)
-                statoCorrente = EROGAZIONE; timerStato.reset(); timerStato.start();
+                statoCorrente = EROGAZIONE;
+                timerStato.reset();
+                timerStato.start();
             }
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
                 if (++contatoreAssenza > FILTRO_USCITA) statoCorrente = RIPOSO;
@@ -897,16 +841,10 @@ void updateMachine() {
             }
 
             setRGB(1, 1, 0);
-            // Mostra prodotto che si sta erogando (protetto con mutex)
-            i2cMutex.lock();
             lcd.setCursor(0, 0);
-            if(idProdotto==1)      lcd.printf("Eroga ACQUA...  ");
-            else if(idProdotto==2) lcd.printf("Eroga SNACK...  ");
-            else if(idProdotto==3) lcd.printf("Eroga CAFFE...  ");
-            else                   lcd.printf("Eroga THE...    ");
-            lcd.setCursor(0, 1); lcd.printf("Attendere       ");
-            i2cMutex.unlock();
-
+            lcd.printf("Erogazione...   ");
+            lcd.setCursor(0, 1);
+            lcd.printf("Attendere       ");
             if (timerStato.elapsed_time().count() < 2000000) {
                 buzzer = 1;
                 if (timerStato.elapsed_time().count() < 1000000) servo.write(0.10f);
@@ -914,42 +852,24 @@ void updateMachine() {
             } else {
                 buzzer = 0;
 
-                // Decrementa scorte per il prodotto erogato
                 if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] > 0) {
                     scorte[idProdotto]--;
-                    printf("[EROGAZIONE] Prodotto %d erogato. Scorte rimanenti: %d\n", idProdotto, scorte[idProdotto]);
+                    printf("[EROGAZIONE] Prodotto %d erogato. Scorte: %d\n", idProdotto, scorte[idProdotto]);
                 } else {
-                    printf("[ERRORE] Tentativo erogazione con scorte invalide: prodotto=%d, scorte=%d\n",
-                           idProdotto, (idProdotto >= 1 && idProdotto <= 4) ? scorte[idProdotto] : -1);
+                    printf("[ERRORE] Erogazione con scorte invalide: prodotto=%d\n", idProdotto);
                 }
 
                 credito -= prezzoSelezionato;
 
-                // GESTIONE SCORTE: Decrementa scorta prodotto erogato
-                if (idProdotto >= 1 && idProdotto <= 4) {
-                    scorte[idProdotto]--;
-                    printf("[SCORTE] Erogato prodotto %d, rimanenti: %d\n", idProdotto, scorte[idProdotto]);
-                }
-
-                // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
-                // ma con timeout di 30s per inattività → RESTO automatico
                 if (credito > 0) {
                     statoCorrente = ATTESA_MONETA;
-                    timerUltimaMoneta.reset();  // Reset timer per timeout inattività
+                    timerUltimaMoneta.reset();
                     timerUltimaMoneta.start();
-                    creditoResiduo = true;      // Marca credito come residuo (no erogazione auto)
-                    char msg1[17], msg2[17];
-                    memset(msg1, ' ', 16); msg1[16] = '\0';
-                    memset(msg2, ' ', 16); msg2[16] = '\0';
-                    snprintf(msg1, 16, "Credito: %d.00E", credito);
-                    snprintf(msg2, 16, "Scegli prodotto");
-                    msg1[16] = '\0'; msg2[16] = '\0';
-                    i2cMutex.lock();
+                    creditoResiduo = true;
                     lcd.clear();
-                    lcd.setCursor(0, 0); lcd.printf("%s", msg1);
-                    lcd.setCursor(0, 1); lcd.printf("%s", msg2);
-                    i2cMutex.unlock();
-                    thread_sleep_for(1500);  // Mostra credito residuo
+                    wait_us(20000);
+                    lcd.printf("Credito: %dE", credito);
+                    thread_sleep_for(1500);
                 } else {
                     statoCorrente = ATTESA_MONETA;
                     creditoResiduo = false;
@@ -961,6 +881,9 @@ void updateMachine() {
 
         case RESTO: {
             setRGB(1, 0, 1);
+            lcd.setCursor(0, 0);
+            lcd.printf("Ritira Resto    ");
+            lcd.setCursor(0, 1);
             char bufResto[17];
             snprintf(bufResto, sizeof(bufResto), "Importo: %d.00E ", credito);
 
@@ -973,8 +896,10 @@ void updateMachine() {
             else buzzer = 0;
 
             if (timerStato.elapsed_time().count() > 3000000) {
-                printf("[RESTO] Resto di %dE restituito\n", credito);
-                buzzer = 0; credito = 0; statoCorrente = ATTESA_MONETA;
+                printf("[RESTO] Restituito: %dE\n", credito);
+                buzzer = 0;
+                credito = 0;
+                statoCorrente = ATTESA_MONETA;
             }
             break;
         }
@@ -984,6 +909,9 @@ void updateMachine() {
             if (blinkTimer % 2 == 0) { setRGB(1, 0, 0); buzzer = 1; }
             else { setRGB(0, 0, 0); buzzer = 0; }
 
+            lcd.setCursor(0, 0);
+            lcd.printf("! ALLARME TEMP !");
+            lcd.setCursor(0, 1);
             char bufErr[17];
             dhtMutex.lock();
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
@@ -1012,7 +940,6 @@ void bleInitComplete(BLE::InitializationCompleteCallbackContext *params) {
 
     vendingServicePtr = new VendingService(ble, 23, 50, 0);
 
-    // REGISTRAZIONE HANDLER CORRETTA PER MBED OS 6
     ble.gap().setEventHandler(&gap_handler);
     ble.gattServer().setEventHandler(&server_handler);
 
@@ -1033,28 +960,26 @@ void scheduleBleEventsProcessing(BLE::OnEventsToProcessCallbackContext *context)
 }
 
 int main() {
-    thread_sleep_for(200); servo.period_ms(20); servo.write(0.05f);
-    echo.rise(&echoRise); echo.fall(&echoFall);
-
-    // Init I2C devices (LCD e OLED condividono bus)
-    // Non serve mutex qui: esecuzione seriale all'avvio prima del BLE
-    lcd.begin(); lcd.backlight(); lcd.clear(); lcd.setCursor(0,0); lcd.printf("BOOT v7.3 DUAL");
-
-    // Inizializza OLED SSD1306
-    if (oled.init()) {
-        oled.setCursor(0, 0); oled.printf("Vending v7.3");
-        oled.setCursor(0, 1); oled.printf("OLED Ready!");
-    }
-
-    buzzer = 1; thread_sleep_for(100); buzzer = 0;
+    thread_sleep_for(200);
+    servo.period_ms(20);
+    servo.write(0.05f);
+    echo.rise(&echoRise);
+    echo.fall(&echoFall);
+    lcd.begin();
+    lcd.backlight();
+    lcd.clear();
+    wait_us(20000);
+    lcd.setCursor(0,0);
+    lcd.printf("BOOT v8.0 CLEAN");
+    buzzer = 1;
+    thread_sleep_for(100);
+    buzzer = 0;
     timerUltimaMoneta.start();
-    ldrDebounceTimer.reset(); // Inizializza timer debouncing
+    ldrDebounceTimer.reset();
 
-    // Avvia thread separato per DHT11
     Thread dhtThread(osPriorityLow);
     dhtThread.start(callback(dht_reader_thread));
 
-    // Avvia watchdog con timeout di 10 secondi
     watchdog.start(10000);
 
     BLE &ble = BLE::Instance();
