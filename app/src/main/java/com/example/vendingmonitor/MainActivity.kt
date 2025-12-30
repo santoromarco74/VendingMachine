@@ -98,14 +98,14 @@ class MainActivity : ComponentActivity() {
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // HEADER
-            Text("VENDING MONITOR", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFFBB86FC), letterSpacing = 2.sp)
-            Spacer(modifier = Modifier.height(16.dp))
+            Text("VENDING MONITOR", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFFBB86FC), letterSpacing = 2.sp)
+            Spacer(modifier = Modifier.height(8.dp))
             StatusIndicator()
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // --- ZONA ACQUISTO (CLIENTE) ---
             Text("SELEZIONA PRODOTTO", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
                 elevation = CardDefaults.cardElevation(4.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
 
                     // RIGA 1: ACQUA & SNACK
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -139,14 +139,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // CREDITO
-                    Text("CREDITO INSERITO", fontSize = 12.sp, color = Color.Gray)
-                    Text("$creditState,00 €", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("CREDITO INSERITO", fontSize = 11.sp, color = Color.Gray)
+                    Text("$creditState,00 €", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
 
                     // PULSANTE CONFERMA ACQUISTO
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
                             Toast.makeText(this@MainActivity, "Invio conferma acquisto...", Toast.LENGTH_SHORT).show()
@@ -155,42 +155,42 @@ class MainActivity : ComponentActivity() {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50).copy(alpha = 0.2f)),
                         border = BorderStroke(1.dp, Color(0xFF4CAF50)),
                         shape = RoundedCornerShape(50),
-                        modifier = Modifier.height(40.dp),
+                        modifier = Modifier.height(36.dp),
                         enabled = creditState >= 1 // Abilita solo se c'è credito
                     ) {
-                        Text("CONFERMA ACQUISTO", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("CONFERMA ACQUISTO", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
 
                     // PULSANTE ANNULLA
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Button(
                         onClick = { writeCommand(9) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFCF6679).copy(alpha = 0.2f)),
                         border = BorderStroke(1.dp, Color(0xFFCF6679)),
                         shape = RoundedCornerShape(50),
-                        modifier = Modifier.height(40.dp)
+                        modifier = Modifier.height(36.dp)
                     ) {
-                        Text("ANNULLA / RESTO", color = Color(0xFFCF6679), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("ANNULLA / RESTO", color = Color(0xFFCF6679), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // --- ZONA MANUTENZIONE ---
-            Text("DIAGNOSTICA", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
-            Spacer(modifier = Modifier.height(8.dp))
+            Text("DIAGNOSTICA", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SensorMiniCard("TEMP", "$tempState°C", Color(0xFFFF9800), Modifier.weight(1f))
                 SensorMiniCard("UMIDITÀ", "$humState%", Color(0xFF4FC3F7), Modifier.weight(1f))
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             MachineStateBar()
 
             // PULSANTE RIFORNIMENTO
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     Toast.makeText(this@MainActivity, "Rifornimento in corso...", Toast.LENGTH_SHORT).show()
@@ -199,9 +199,9 @@ class MainActivity : ComponentActivity() {
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3).copy(alpha = 0.2f)),
                 border = BorderStroke(1.dp, Color(0xFF2196F3)),
                 shape = RoundedCornerShape(50),
-                modifier = Modifier.fillMaxWidth().height(40.dp)
+                modifier = Modifier.fillMaxWidth().height(36.dp)
             ) {
-                Text("RIFORNIMENTO SCORTE", color = Color(0xFF2196F3), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("RIFORNIMENTO SCORTE", color = Color(0xFF2196F3), fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -226,17 +226,17 @@ class MainActivity : ComponentActivity() {
         val textColor = if(isOutOfStock) Color.DarkGray else if(isSelected) color else Color.White
 
         Card(
-            modifier = Modifier.size(width = 140.dp, height = 100.dp).clickable(enabled = !isOutOfStock) { onClick() },
+            modifier = Modifier.size(width = 140.dp, height = 90.dp).clickable(enabled = !isOutOfStock) { onClick() },
             colors = CardDefaults.cardColors(containerColor = bg),
             border = border
         ) {
             Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(name, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-                Text(price, fontSize = 14.sp, color = if(isOutOfStock) Color.DarkGray else Color.Gray)
-                Spacer(modifier = Modifier.height(4.dp))
+                Text(name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = textColor)
+                Text(price, fontSize = 13.sp, color = if(isOutOfStock) Color.DarkGray else Color.Gray)
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = if(isOutOfStock) "ESAURITO" else "Rim: $stock",
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     color = if(isOutOfStock) Color.Red else Color(0xFF4CAF50),
                     fontWeight = FontWeight.Bold
                 )
@@ -247,12 +247,12 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun SensorMiniCard(title: String, value: String, color: Color, modifier: Modifier) {
         Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C))) {
-            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
-                Spacer(modifier = Modifier.width(10.dp))
+            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(7.dp).background(color, CircleShape))
+                Spacer(modifier = Modifier.width(8.dp))
                 Column {
-                    Text(title, fontSize = 10.sp, color = Color.Gray)
-                    Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(title, fontSize = 9.sp, color = Color.Gray)
+                    Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -269,10 +269,10 @@ class MainActivity : ComponentActivity() {
             else -> "--" to Color.Gray
         }
         Card(colors = CardDefaults.cardColors(containerColor = colore.copy(alpha=0.2f)), modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("STATO:", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(testo, fontSize = 14.sp, color = colore, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("STATO:", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(testo, fontSize = 13.sp, color = colore, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -302,9 +302,9 @@ class MainActivity : ComponentActivity() {
                 else stopScan()
             },
             colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            modifier = Modifier.fillMaxWidth().height(44.dp),
             shape = RoundedCornerShape(8.dp)
-        ) { Text(text, color = Color.Black, fontWeight = FontWeight.Bold) }
+        ) { Text(text, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
     }
 
     // --- LOGICA BLUETOOTH (DEPRECATIONS FIXED) ---

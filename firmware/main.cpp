@@ -2,8 +2,13 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.2 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.3 CLEAN (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.3:
+ * - [FIX] Aggiunti delay 500us tra setCursor/printf per prevenire corruzione LCD
+ * - [FIX] Tutte operazioni LCD ora hanno timing corretto per stabilità display
+ * - [STABILITY] Risolti problemi visualizzazione LCD con operazioni consecutive
  *
  * CHANGELOG v8.2:
  * - [CRITICAL FIX] Validazione scorte PRIMA di erogazione (prevenzione dispensing con stock=0)
@@ -718,8 +723,11 @@ void updateMachine() {
             setRGB(0, 1, 0);
             buzzer = 0;
             lcd.setCursor(0, 0);
+            wait_us(500);
             lcd.printf("  VENDING IoT   ");
+            wait_us(500);
             lcd.setCursor(0, 1);
+            wait_us(500);
 
             // Mostra prodotto selezionato e scorte
             char buffer[17];
@@ -742,6 +750,7 @@ void updateMachine() {
 
             buzzer = 0;
             lcd.setCursor(0, 0);
+            wait_us(500);
             uint64_t tempoPassato = timerUltimaMoneta.elapsed_time().count();
 
             int secondiMancanti = 0;
@@ -778,7 +787,9 @@ void updateMachine() {
                 }
             }
 
+            wait_us(500);
             lcd.setCursor(0, 1);
+            wait_us(500);
             char buf2[17];
             if(credito > 0) {
                 snprintf(buf2, sizeof(buf2), "Cr:%d/%d [Blu=Esc", credito, prezzoSelezionato);
@@ -860,6 +871,7 @@ void updateMachine() {
             // Scorte disponibili: procedi con erogazione
             setRGB(1, 1, 0);
             lcd.setCursor(0, 0);
+            wait_us(500);
 
             // Mostra nome prodotto erogato
             if(idProdotto==1)      lcd.printf("Erogando ACQUA  ");
@@ -867,7 +879,9 @@ void updateMachine() {
             else if(idProdotto==3) lcd.printf("Erogando CAFFE  ");
             else                   lcd.printf("Erogando THE    ");
 
+            wait_us(500);
             lcd.setCursor(0, 1);
+            wait_us(500);
             lcd.printf("Attendere       ");
             if (timerStato.elapsed_time().count() < 2000000) {
                 buzzer = 1;
@@ -920,8 +934,11 @@ void updateMachine() {
         case RESTO: {
             setRGB(1, 0, 1);
             lcd.setCursor(0, 0);
+            wait_us(500);
             lcd.printf("Ritira Resto    ");
+            wait_us(500);
             lcd.setCursor(0, 1);
+            wait_us(500);
             char bufResto[17];
             snprintf(bufResto, sizeof(bufResto), "Importo: %d.00E ", credito);
 
@@ -948,8 +965,11 @@ void updateMachine() {
             else { setRGB(0, 0, 0); buzzer = 0; }
 
             lcd.setCursor(0, 0);
+            wait_us(500);
             lcd.printf("! ALLARME TEMP !");
+            wait_us(500);
             lcd.setCursor(0, 1);
+            wait_us(500);
             char bufErr[17];
             dhtMutex.lock();
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
@@ -1008,7 +1028,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.2 CLEAN");
+    lcd.printf("BOOT v8.3 CLEAN");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
