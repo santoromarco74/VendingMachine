@@ -349,13 +349,13 @@ public:
         cmdChar(CMD_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE),
         statusChar(STATUS_CHAR_UUID, statusData, 6, 6, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY)
     {
-        // Inizializza statusData con valori di default
+        // Inizializza statusData leggendo i valori correnti dall'array scorte
         statusData[0] = 0; // credito
         statusData[1] = 0; // stato
-        statusData[2] = 5; // scorte ACQUA
-        statusData[3] = 5; // scorte SNACK
-        statusData[4] = 5; // scorte CAFFE
-        statusData[5] = 5; // scorte THE
+        statusData[2] = (uint8_t)scorte[1]; // ACQUA
+        statusData[3] = (uint8_t)scorte[2]; // SNACK
+        statusData[4] = (uint8_t)scorte[3]; // CAFFE
+        statusData[5] = (uint8_t)scorte[4]; // THE
 
         GattCharacteristic *charTable[] = {&tempChar, &humChar, &statusChar, &cmdChar};
         GattService vendingService(VENDING_SERVICE_UUID, charTable, 4);
@@ -521,7 +521,6 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         lcd.clear(); lcd.printf("Annullato da App");
                         i2cMutex.unlock();
                         setRGB(1, 0, 1); // Viola momentaneo
-                        thread_sleep_for(1000);
                         statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
                     }
@@ -536,19 +535,16 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         lcd.clear(); lcd.printf("Stato Invalido!");
                         i2cMutex.unlock();
                         printf("[BLE] Conferma rifiutata: stato non ATTESA_MONETA\n");
-                        thread_sleep_for(1500);
                     } else if (credito < prezzoSelezionato) {
                         i2cMutex.lock();
                         lcd.clear(); lcd.printf("Credito Insuffic");
                         i2cMutex.unlock();
                         printf("[BLE] Conferma rifiutata: credito insufficiente\n");
-                        thread_sleep_for(1500);
                     } else {
                         i2cMutex.lock();
                         lcd.clear(); lcd.printf("Confermato!");
                         i2cMutex.unlock();
                         printf("[BLE] Conferma accettata: avvio erogazione\n");
-                        thread_sleep_for(500);
                         statoCorrente = EROGAZIONE;
                         timerStato.reset();
                         timerStato.start();
@@ -561,13 +557,9 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     scorte[2] = SCORTE_MAX; // SNACK
                     scorte[3] = SCORTE_MAX; // CAFFE
                     scorte[4] = SCORTE_MAX; // THE
-                    lcd.clear(); lcd.printf("RIFORNIMENTO OK");
                     printf("[STOCK] Rifornimento completato: tutte le scorte ripristinate a %d\n", SCORTE_MAX);
-                    thread_sleep_for(1500);
                     if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
                 }
-                // Feedback visivo immediato della selezione
-                if(cmd >= 1 && cmd <= 4) thread_sleep_for(1000);
             }
         }
     }
@@ -707,7 +699,7 @@ void updateMachine() {
 
         if (temp_check >= SOGLIA_TEMP && statoCorrente != ERRORE) {
             printf("[ALLARME] Temperatura critica: %d°C (soglia: %d°C)\n", temp_check, SOGLIA_TEMP);
-            statoCorrente = ERRORE; lcd.clear();
+            statoCorrente = ERRORE; lcd.clear(); wait_us(20000);
         }
     }
 
@@ -745,7 +737,7 @@ void updateMachine() {
     }
 
     if (statoCorrente != statoPrecedente) {
-        lcd.clear(); buzzer = 0;
+        lcd.clear(); wait_us(20000); buzzer = 0;
 
         // Log cambio stato con dettagli
         const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
@@ -853,14 +845,14 @@ void updateMachine() {
             }
 
             if (tastoAnnulla == 0 && credito > 0) {
-                lcd.clear(); lcd.printf("Annullato Manual");
+                lcd.clear(); wait_us(20000); lcd.printf("Annullato Manual");
                 printf("[ANNULLA] Operazione annullata da pulsante. Resto: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito > 0 && credito < prezzoSelezionato && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                lcd.clear(); lcd.printf("Tempo Scaduto!");
+                lcd.clear(); wait_us(20000); lcd.printf("Tempo Scaduto!");
                 printf("[TIMEOUT] Credito parziale scaduto. Resto: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
@@ -868,7 +860,7 @@ void updateMachine() {
             }
             else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
                 // Timeout per credito residuo: vai a RESTO (no auto-erogazione)
-                lcd.clear(); lcd.printf("Tempo Scaduto!");
+                lcd.clear(); wait_us(20000); lcd.printf("Tempo Scaduto!");
                 printf("[TIMEOUT] Credito residuo scaduto. Resto: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
