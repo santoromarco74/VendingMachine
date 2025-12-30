@@ -437,6 +437,7 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: ACQUA (scorte=%d)\n", scorte[1]);
                 }
                 // 2. SNACK (Magenta)
                 else if (cmd == 2) {
@@ -461,6 +462,7 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: SNACK (scorte=%d)\n", scorte[2]);
                 }
                 // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
@@ -485,6 +487,7 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: CAFFE (scorte=%d)\n", scorte[3]);
                 }
                 // 4. THE (Verde)
                 else if (cmd == 4) {
@@ -509,6 +512,7 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     i2cMutex.unlock();
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: THE (scorte=%d)\n", scorte[4]);
                 }
                 // 9. ANNULLA
                 else if (cmd == 9) {
@@ -551,29 +555,16 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         vendingServicePtr->updateStatus(credito, statoCorrente);
                     }
                 }
-                // 11. RIFORNIMENTO (Refill - solo da app)
+                // 11. RIFORNIMENTO (reset scorte)
                 else if (cmd == 11) {
-                    i2cMutex.lock();
-                    lcd.clear();
-                    lcd.setCursor(0, 0); lcd.printf("RIFORNIMENTO");
-                    lcd.setCursor(0, 1); lcd.printf("In corso...");
-                    i2cMutex.unlock();
-                    setRGB(0, 0, 1); // Blu
-
-                    // Ripristina tutte le scorte al massimo
-                    for (int i = 1; i <= 4; i++) {
-                        scorte[i] = SCORTE_MAX;
-                    }
-
-                    printf("[SCORTE] Rifornimento completato: tutto a %d pezzi\n", SCORTE_MAX);
+                    scorte[1] = SCORTE_MAX; // ACQUA
+                    scorte[2] = SCORTE_MAX; // SNACK
+                    scorte[3] = SCORTE_MAX; // CAFFE
+                    scorte[4] = SCORTE_MAX; // THE
+                    lcd.clear(); lcd.printf("RIFORNIMENTO OK");
+                    printf("[STOCK] Rifornimento completato: tutte le scorte ripristinate a %d\n", SCORTE_MAX);
                     thread_sleep_for(1500);
-
-                    i2cMutex.lock();
-                    lcd.clear();
-                    lcd.setCursor(0, 0); lcd.printf("RIFORNIMENTO");
-                    lcd.setCursor(0, 1); lcd.printf("Completato!");
-                    i2cMutex.unlock();
-                    thread_sleep_for(1500);
+                    if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
                 }
                 // Feedback visivo immediato della selezione
                 if(cmd >= 1 && cmd <= 4) thread_sleep_for(1000);
@@ -705,6 +696,7 @@ void updateMachine() {
             if (valid) {
                 vendingServicePtr->updateTemp(temp_copy);
                 vendingServicePtr->updateHum(hum_copy);
+                printf("[SENSORI] Temp: %d°C | Hum: %d%% | Dist: %dcm\n", temp_copy, hum_copy, dist);
             }
         }
 
@@ -714,10 +706,8 @@ void updateMachine() {
         dhtMutex.unlock();
 
         if (temp_check >= SOGLIA_TEMP && statoCorrente != ERRORE) {
-            statoCorrente = ERRORE;
-            i2cMutex.lock();
-            lcd.clear();
-            i2cMutex.unlock();
+            printf("[ALLARME] Temperatura critica: %d°C (soglia: %d°C)\n", temp_check, SOGLIA_TEMP);
+            statoCorrente = ERRORE; lcd.clear();
         }
     }
 
@@ -755,14 +745,14 @@ void updateMachine() {
     }
 
     if (statoCorrente != statoPrecedente) {
-        i2cMutex.lock();
-        lcd.clear();
-        i2cMutex.unlock();
+        lcd.clear(); buzzer = 0;
 
-        // Delay per stabilizzare bus I2C dopo clear
-        thread_sleep_for(20);
+        // Log cambio stato con dettagli
+        const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
+        printf("[FSM] Cambio stato: %s -> %s | Credito: %dE | Prodotto: %d\n",
+               nomiStati[statoPrecedente], nomiStati[statoCorrente], credito, idProdotto);
 
-        buzzer = 0; statoPrecedente = statoCorrente;
+        statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
 
         // Invalida cache LCD (forza riscrittura dopo cambio stato)
@@ -863,29 +853,23 @@ void updateMachine() {
             }
 
             if (tastoAnnulla == 0 && credito > 0) {
-                i2cMutex.lock();
                 lcd.clear(); lcd.printf("Annullato Manual");
-                i2cMutex.unlock();
-                lcdCacheRiga1[0] = '\0'; lcdCacheRiga2[0] = '\0'; // Invalida cache
+                printf("[ANNULLA] Operazione annullata da pulsante. Resto: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito > 0 && credito < prezzoSelezionato && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                i2cMutex.lock();
                 lcd.clear(); lcd.printf("Tempo Scaduto!");
-                i2cMutex.unlock();
-                lcdCacheRiga1[0] = '\0'; lcdCacheRiga2[0] = '\0'; // Invalida cache
+                printf("[TIMEOUT] Credito parziale scaduto. Resto: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
                 // Timeout per credito residuo: vai a RESTO (no auto-erogazione)
-                i2cMutex.lock();
                 lcd.clear(); lcd.printf("Tempo Scaduto!");
-                i2cMutex.unlock();
-                lcdCacheRiga1[0] = '\0'; lcdCacheRiga2[0] = '\0'; // Invalida cache
+                printf("[TIMEOUT] Credito residuo scaduto. Resto: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
@@ -937,6 +921,16 @@ void updateMachine() {
                 else servo.write(0.05f);
             } else {
                 buzzer = 0;
+
+                // Decrementa scorte per il prodotto erogato
+                if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] > 0) {
+                    scorte[idProdotto]--;
+                    printf("[EROGAZIONE] Prodotto %d erogato. Scorte rimanenti: %d\n", idProdotto, scorte[idProdotto]);
+                } else {
+                    printf("[ERRORE] Tentativo erogazione con scorte invalide: prodotto=%d, scorte=%d\n",
+                           idProdotto, (idProdotto >= 1 && idProdotto <= 4) ? scorte[idProdotto] : -1);
+                }
+
                 credito -= prezzoSelezionato;
 
                 // GESTIONE SCORTE: Decrementa scorta prodotto erogato
@@ -987,6 +981,7 @@ void updateMachine() {
             else buzzer = 0;
 
             if (timerStato.elapsed_time().count() > 3000000) {
+                printf("[RESTO] Resto di %dE restituito\n", credito);
                 buzzer = 0; credito = 0; statoCorrente = ATTESA_MONETA;
             }
             break;
