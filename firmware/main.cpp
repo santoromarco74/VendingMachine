@@ -21,6 +21,216 @@
 #include "ble/GattServer.h"
 #include "TextLCD.h"
 
+// ======================================================================================
+// DRIVER SSD1306 OLED MINIMALE (128x32 / 128x64)
+// ======================================================================================
+class SSD1306 {
+private:
+    I2C *i2c;
+    uint8_t addr;
+    uint8_t width, height, pages;
+    uint8_t cursorX, cursorY;
+    bool initialized;
+
+    // Font 5x7 minimale per caratteri ASCII 32-126
+    static const uint8_t font5x7[95][5];
+
+    void command(uint8_t cmd) {
+        uint8_t data[2] = {0x00, cmd};
+        i2c->write(addr, (char*)data, 2);
+    }
+
+    void data(uint8_t* buf, int len) {
+        uint8_t temp[len + 1];
+        temp[0] = 0x40;
+        memcpy(temp + 1, buf, len);
+        i2c->write(addr, (char*)temp, len + 1);
+    }
+
+public:
+    SSD1306(PinName sda, PinName scl, uint8_t address = 0x3C, uint8_t h = 32)
+        : width(128), height(h), cursorX(0), cursorY(0), initialized(false) {
+        i2c = new I2C(sda, scl);
+        i2c->frequency(400000);
+        addr = address << 1;
+        pages = height / 8;
+    }
+
+    // Condividi bus I2C esistente (per usare stesso bus di LCD)
+    void attachToI2C(I2C* existingI2C, uint8_t address = 0x3C, uint8_t h = 32) {
+        i2c = existingI2C;
+        addr = address << 1;
+        height = h;
+        pages = height / 8;
+    }
+
+    bool init() {
+        // Auto-detect indirizzo: prova 0x3C poi 0x3D
+        for (uint8_t testAddr : {0x3C, 0x3D}) {
+            addr = testAddr << 1;
+            if (i2c->write(addr, NULL, 0) == 0) {
+                printf("[OLED] Trovato SSD1306 a 0x%02X, altezza=%d\n", testAddr, height);
+
+                // Sequenza init SSD1306
+                command(0xAE); // Display off
+                command(0xD5); command(0x80); // Clock div
+                command(0xA8); command(height - 1); // Multiplex
+                command(0xD3); command(0x00); // Display offset
+                command(0x40); // Start line
+                command(0x8D); command(0x14); // Charge pump ON
+                command(0x20); command(0x00); // Addressing mode horizontal
+                command(0xA1); // Segment remap
+                command(0xC8); // COM scan direction
+                command(0xDA); command(height == 32 ? 0x02 : 0x12); // COM pins
+                command(0x81); command(0x8F); // Contrast
+                command(0xD9); command(0xF1); // Precharge
+                command(0xDB); command(0x40); // VCOM detect
+                command(0xA4); // Display RAM
+                command(0xA6); // Normal display
+                command(0xAF); // Display on
+
+                initialized = true;
+                clear();
+                return true;
+            }
+        }
+        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D)\n");
+        return false;
+    }
+
+    void clear() {
+        if (!initialized) return;
+        cursorX = 0; cursorY = 0;
+        command(0x21); command(0); command(127); // Column range
+        command(0x22); command(0); command(pages - 1); // Page range
+        uint8_t zero[128] = {0};
+        for (int p = 0; p < pages; p++) data(zero, 128);
+    }
+
+    void setCursor(uint8_t x, uint8_t y) {
+        cursorX = x; cursorY = y;
+    }
+
+    void printf(const char* format, ...) {
+        if (!initialized) return;
+        char buffer[64];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(buffer, sizeof(buffer), format, args);
+        va_end(args);
+
+        for (int i = 0; buffer[i] != '\0'; i++) {
+            drawChar(cursorX + i * 6, cursorY, buffer[i]);
+        }
+    }
+
+    void drawChar(uint8_t x, uint8_t page, char c) {
+        if (!initialized || c < 32 || c > 126) return;
+        uint8_t charData[6];
+        memcpy(charData, font5x7[c - 32], 5);
+        charData[5] = 0x00; // Spacing
+
+        command(0x21); command(x); command(x + 5);
+        command(0x22); command(page); command(page);
+        data(charData, 6);
+    }
+};
+
+// Font 5x7 ridotto (solo caratteri essenziali: 0-9, A-Z, spazio, :, /, %, °, C, E)
+const uint8_t SSD1306::font5x7[95][5] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00}, // space
+    {0x00, 0x00, 0x5F, 0x00, 0x00}, // !
+    {0x00, 0x07, 0x00, 0x07, 0x00}, // "
+    {0x14, 0x7F, 0x14, 0x7F, 0x14}, // #
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12}, // $
+    {0x23, 0x13, 0x08, 0x64, 0x62}, // %
+    {0x36, 0x49, 0x55, 0x22, 0x50}, // &
+    {0x00, 0x05, 0x03, 0x00, 0x00}, // '
+    {0x00, 0x1C, 0x22, 0x41, 0x00}, // (
+    {0x00, 0x41, 0x22, 0x1C, 0x00}, // )
+    {0x14, 0x08, 0x3E, 0x08, 0x14}, // *
+    {0x08, 0x08, 0x3E, 0x08, 0x08}, // +
+    {0x00, 0x50, 0x30, 0x00, 0x00}, // ,
+    {0x08, 0x08, 0x08, 0x08, 0x08}, // -
+    {0x00, 0x60, 0x60, 0x00, 0x00}, // .
+    {0x20, 0x10, 0x08, 0x04, 0x02}, // /
+    {0x3E, 0x51, 0x49, 0x45, 0x3E}, // 0
+    {0x00, 0x42, 0x7F, 0x40, 0x00}, // 1
+    {0x42, 0x61, 0x51, 0x49, 0x46}, // 2
+    {0x21, 0x41, 0x45, 0x4B, 0x31}, // 3
+    {0x18, 0x14, 0x12, 0x7F, 0x10}, // 4
+    {0x27, 0x45, 0x45, 0x45, 0x39}, // 5
+    {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 6
+    {0x01, 0x71, 0x09, 0x05, 0x03}, // 7
+    {0x36, 0x49, 0x49, 0x49, 0x36}, // 8
+    {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
+    {0x00, 0x36, 0x36, 0x00, 0x00}, // :
+    {0x00, 0x56, 0x36, 0x00, 0x00}, // ;
+    {0x08, 0x14, 0x22, 0x41, 0x00}, // <
+    {0x14, 0x14, 0x14, 0x14, 0x14}, // =
+    {0x00, 0x41, 0x22, 0x14, 0x08}, // >
+    {0x02, 0x01, 0x51, 0x09, 0x06}, // ?
+    {0x32, 0x49, 0x79, 0x41, 0x3E}, // @
+    {0x7E, 0x11, 0x11, 0x11, 0x7E}, // A
+    {0x7F, 0x49, 0x49, 0x49, 0x36}, // B
+    {0x3E, 0x41, 0x41, 0x41, 0x22}, // C
+    {0x7F, 0x41, 0x41, 0x22, 0x1C}, // D
+    {0x7F, 0x49, 0x49, 0x49, 0x41}, // E
+    {0x7F, 0x09, 0x09, 0x09, 0x01}, // F
+    {0x3E, 0x41, 0x49, 0x49, 0x7A}, // G
+    {0x7F, 0x08, 0x08, 0x08, 0x7F}, // H
+    {0x00, 0x41, 0x7F, 0x41, 0x00}, // I
+    {0x20, 0x40, 0x41, 0x3F, 0x01}, // J
+    {0x7F, 0x08, 0x14, 0x22, 0x41}, // K
+    {0x7F, 0x40, 0x40, 0x40, 0x40}, // L
+    {0x7F, 0x02, 0x0C, 0x02, 0x7F}, // M
+    {0x7F, 0x04, 0x08, 0x10, 0x7F}, // N
+    {0x3E, 0x41, 0x41, 0x41, 0x3E}, // O
+    {0x7F, 0x09, 0x09, 0x09, 0x06}, // P
+    {0x3E, 0x41, 0x51, 0x21, 0x5E}, // Q
+    {0x7F, 0x09, 0x19, 0x29, 0x46}, // R
+    {0x46, 0x49, 0x49, 0x49, 0x31}, // S
+    {0x01, 0x01, 0x7F, 0x01, 0x01}, // T
+    {0x3F, 0x40, 0x40, 0x40, 0x3F}, // U
+    {0x1F, 0x20, 0x40, 0x20, 0x1F}, // V
+    {0x3F, 0x40, 0x38, 0x40, 0x3F}, // W
+    {0x63, 0x14, 0x08, 0x14, 0x63}, // X
+    {0x07, 0x08, 0x70, 0x08, 0x07}, // Y
+    {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
+    {0x00, 0x7F, 0x41, 0x41, 0x00}, // [
+    {0x02, 0x04, 0x08, 0x10, 0x20}, // backslash
+    {0x00, 0x41, 0x41, 0x7F, 0x00}, // ]
+    {0x04, 0x02, 0x01, 0x02, 0x04}, // ^
+    {0x40, 0x40, 0x40, 0x40, 0x40}, // _
+    {0x00, 0x01, 0x02, 0x04, 0x00}, // `
+    {0x20, 0x54, 0x54, 0x54, 0x78}, // a
+    {0x7F, 0x48, 0x44, 0x44, 0x38}, // b
+    {0x38, 0x44, 0x44, 0x44, 0x20}, // c
+    {0x38, 0x44, 0x44, 0x48, 0x7F}, // d
+    {0x38, 0x54, 0x54, 0x54, 0x18}, // e
+    {0x08, 0x7E, 0x09, 0x01, 0x02}, // f
+    {0x0C, 0x52, 0x52, 0x52, 0x3E}, // g
+    {0x7F, 0x08, 0x04, 0x04, 0x78}, // h
+    {0x00, 0x44, 0x7D, 0x40, 0x00}, // i
+    {0x20, 0x40, 0x44, 0x3D, 0x00}, // j
+    {0x7F, 0x10, 0x28, 0x44, 0x00}, // k
+    {0x00, 0x41, 0x7F, 0x40, 0x00}, // l
+    {0x7C, 0x04, 0x18, 0x04, 0x78}, // m
+    {0x7C, 0x08, 0x04, 0x04, 0x78}, // n
+    {0x38, 0x44, 0x44, 0x44, 0x38}, // o
+    {0x7C, 0x14, 0x14, 0x14, 0x08}, // p
+    {0x08, 0x14, 0x14, 0x18, 0x7C}, // q
+    {0x7C, 0x08, 0x04, 0x04, 0x08}, // r
+    {0x48, 0x54, 0x54, 0x54, 0x20}, // s
+    {0x04, 0x3F, 0x44, 0x40, 0x20}, // t
+    {0x3C, 0x40, 0x40, 0x20, 0x7C}, // u
+    {0x1C, 0x20, 0x40, 0x20, 0x1C}, // v
+    {0x3C, 0x40, 0x30, 0x40, 0x3C}, // w
+    {0x44, 0x28, 0x10, 0x28, 0x44}, // x
+    {0x0C, 0x50, 0x50, 0x50, 0x3C}, // y
+    {0x44, 0x64, 0x54, 0x4C, 0x44}  // z
+};
+
 // --- CONFIGURAZIONE PIN ---
 #define PIN_TRIG    A1
 #define PIN_ECHO    D9
@@ -67,6 +277,7 @@ Stato statoPrecedente = ERRORE;
 
 // --- OGGETTI DRIVER ---
 TextLCD lcd(PIN_LCD_SDA, PIN_LCD_SCL, 0x4E);
+SSD1306 oled(PIN_LCD_SDA, PIN_LCD_SCL, 0x3C, 32);  // Condivide bus I2C, auto-detect 0x3C/0x3D
 DigitalOut trig(PIN_TRIG);
 InterruptIn echo(PIN_ECHO);
 DigitalInOut dht(PIN_DHT);
@@ -109,6 +320,10 @@ const int SCORTE_MAX = 5;
 
 // Mutex per proteggere accesso DHT
 Mutex dhtMutex;
+
+// Mutex per proteggere BUS I2C condiviso (LCD 0x4E + OLED 0x3C)
+// CRITICO: LCD e OLED condividono SDA/SCL - senza questo mutex si corrompono a vicenda!
+Mutex i2cMutex;
 
 // Watchdog timer
 Watchdog &watchdog = Watchdog::get_instance();
@@ -153,6 +368,8 @@ public:
         statusData[4] = (uint8_t)scorte[3];
         statusData[5] = (uint8_t)scorte[4];
         ble.gattServer().write(statusChar.getValueHandle(), statusData, 6);
+        printf("[BLE] STATUS inviato: credito=%d, stato=%d, scorte=[%d,%d,%d,%d]\n",
+               credit, state, scorte[1], scorte[2], scorte[3], scorte[4]);
     }
 
     GattAttribute::Handle_t getCmdHandle() { return cmdChar.getValueHandle(); }
@@ -189,6 +406,13 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         return;
                     }
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("ACQUA - 1.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[1]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
                     printf("[BLE] ACQUA selezionata (scorte=%d)\n", scorte[1]);
@@ -199,6 +423,13 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         return;
                     }
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("SNACK - 2.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[2]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
                     printf("[BLE] SNACK selezionato (scorte=%d)\n", scorte[2]);
@@ -209,6 +440,13 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         return;
                     }
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("CAFFE - 1.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[3]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
                     printf("[BLE] CAFFE selezionato (scorte=%d)\n", scorte[3]);
@@ -219,6 +457,13 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         return;
                     }
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("THE   - 2.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[4]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
                     printf("[BLE] THE selezionato (scorte=%d)\n", scorte[4]);
@@ -267,8 +512,29 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 // ======================================================================================
 class VendingGapEventHandler : public ble::Gap::EventHandler {
 public:
+    void onConnectionComplete(const ble::ConnectionCompleteEvent &event) override {
+        printf("[BLE] Client connesso - scheduling dati iniziali...\n");
+        // Schedula invio dati dopo 2.5s per dare tempo all'app di abilitare notifiche
+        // Usa event_queue per non bloccare il thread BLE
+        event_queue.call_in(std::chrono::milliseconds(2500), []() {
+            if (vendingServicePtr) {
+                dhtMutex.lock();
+                int temp_copy = temp_int;
+                int hum_copy = hum_int;
+                dhtMutex.unlock();
+
+                vendingServicePtr->updateStatus(credito, statoCorrente);
+                vendingServicePtr->updateTemp(temp_copy);
+                vendingServicePtr->updateHum(hum_copy);
+                printf("[BLE] Dati iniziali inviati: credito=%d, stato=%d, scorte=[%d,%d,%d,%d], T=%d, H=%d\n",
+                       credito, statoCorrente, scorte[1], scorte[2], scorte[3], scorte[4], temp_copy, hum_copy);
+            }
+        });
+    }
+
     void onDisconnectionComplete(const ble::DisconnectionCompleteEvent &event) override {
         BLE::Instance().gap().startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
+        printf("[BLE] Client disconnesso\n");
     }
 };
 
@@ -467,11 +733,18 @@ void updateMachine() {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
+            // Prepara dati LCD fuori dal lock (veloce)
+            char riga1[17], riga2[17];
+            if(idProdotto==1)      snprintf(riga1, sizeof(riga1), "ACQUA - 1.00EUR");
+            else if(idProdotto==2) snprintf(riga1, sizeof(riga1), "SNACK - 2.00EUR");
+            else if(idProdotto==3) snprintf(riga1, sizeof(riga1), "CAFFE - 1.00EUR");
+            else                   snprintf(riga1, sizeof(riga1), "THE   - 2.00EUR");
+
+            memset(riga2, ' ', 16);
+            riga2[16] = '\0';
             if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
                 int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Erog. in %ds...", secondiErogazione);
-                lcd.printf("%s", buf);
+                snprintf(riga2, 16, "Cr:%dE Erog:%ds", credito, secondiErogazione);
             } else if (credito >= prezzoSelezionato && creditoResiduo) {
                 char buf[17];
                 snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
@@ -488,18 +761,20 @@ void updateMachine() {
                     else                   lcd.printf("Ins.Mon x THE   ");
                 }
             }
+            riga2[16] = '\0';
 
-            lcd.setCursor(0, 1);
-            char buf2[17];
-            if(credito > 0) {
-                snprintf(buf2, sizeof(buf2), "Cr:%d/%d [Blu=Esc", credito, prezzoSelezionato);
-            } else {
-                dhtMutex.lock();
-                int temp_copy = temp_int;
-                dhtMutex.unlock();
-                snprintf(buf2, sizeof(buf2), "Prz:%dE D:%03d T:%02d", prezzoSelezionato, dist, temp_copy);
+            // CACHE: Scrivi LCD SOLO se contenuto cambiato (riduce race conditions x10)
+            bool needUpdate = (strcmp(riga1, lcdCacheRiga1) != 0 || strcmp(riga2, lcdCacheRiga2) != 0);
+            if (needUpdate) {
+                i2cMutex.lock();
+                lcd.setCursor(0, 0); lcd.printf("%s", riga1);
+                lcd.setCursor(0, 1); lcd.printf("%s", riga2);
+                i2cMutex.unlock();
+
+                // Aggiorna cache
+                strncpy(lcdCacheRiga1, riga1, 17);
+                strncpy(lcdCacheRiga2, riga2, 17);
             }
-            lcd.printf("%s", buf2);
 
             if (tastoAnnulla == 0 && credito > 0) {
                 lcd.clear();
@@ -542,10 +817,29 @@ void updateMachine() {
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
                 if (++contatoreAssenza > FILTRO_USCITA) statoCorrente = RIPOSO;
             } else contatoreAssenza = 0;
+
             break;
         }
 
         case EROGAZIONE:
+            // CONTROLLO SCORTE CRITICO: verifica PRIMA di erogare
+            if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] <= 0) {
+                i2cMutex.lock();
+                lcd.clear();
+                lcd.setCursor(0, 0); lcd.printf("PRODOTTO");
+                lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                i2cMutex.unlock();
+                setRGB(1, 0, 0); // Rosso
+                printf("[SCORTE] ERRORE: Tentativo erogazione con scorte=0 (prodotto %d)\n", idProdotto);
+                thread_sleep_for(2000);
+                // Vai a RESTO per rimborsare
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
+                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                break;
+            }
+
             setRGB(1, 1, 0);
             lcd.setCursor(0, 0);
             lcd.printf("Erogazione...   ");
@@ -585,14 +879,18 @@ void updateMachine() {
             }
             break;
 
-        case RESTO:
+        case RESTO: {
             setRGB(1, 0, 1);
             lcd.setCursor(0, 0);
             lcd.printf("Ritira Resto    ");
             lcd.setCursor(0, 1);
             char bufResto[17];
-            snprintf(bufResto, sizeof(bufResto), "Monete: %d", credito);
-            lcd.printf("%s", bufResto);
+            snprintf(bufResto, sizeof(bufResto), "Importo: %d.00E ", credito);
+
+            i2cMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
+            lcd.setCursor(0, 1); lcd.printf("%s", bufResto);
+            i2cMutex.unlock();
 
             if ((timerStato.elapsed_time().count() % 400000) < 200000) buzzer = 1;
             else buzzer = 0;
@@ -604,8 +902,9 @@ void updateMachine() {
                 statoCorrente = ATTESA_MONETA;
             }
             break;
+        }
 
-        case ERRORE:
+        case ERRORE: {
             blinkTimer++;
             if (blinkTimer % 2 == 0) { setRGB(1, 0, 0); buzzer = 1; }
             else { setRGB(0, 0, 0); buzzer = 0; }
@@ -616,14 +915,17 @@ void updateMachine() {
             char bufErr[17];
             dhtMutex.lock();
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
-            dhtMutex.unlock();
-            lcd.printf("%s", bufErr);
-
-            dhtMutex.lock();
             int temp_check = temp_int;
             dhtMutex.unlock();
+
+            i2cMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("! ALLARME TEMP !");
+            lcd.setCursor(0, 1); lcd.printf("%s", bufErr);
+            i2cMutex.unlock();
+
             if (temp_check <= (SOGLIA_TEMP - 2)) statoCorrente = RIPOSO;
             break;
+        }
     }
 }
 
