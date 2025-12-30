@@ -106,6 +106,10 @@ int contatoreAssenza = 0;
 int ldrSampleCount = 0;     // Nuovo: contatore campioni per debouncing
 bool creditoResiduo = false; // Flag: true se credito da erogazione precedente
 
+// --- GESTIONE SCORTE (Virtual Inventory) ---
+int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
+const int SCORTE_MAX = 5;        // Capacità massima per prodotto
+
 // Mutex per proteggere accesso a temp_int e hum_int tra thread
 Mutex dhtMutex;
 
@@ -121,9 +125,17 @@ public:
         ble(_ble),
         tempChar(TEMP_CHAR_UUID, &initial_temp, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
         humChar(HUM_CHAR_UUID, &initial_hum, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
-        statusChar(STATUS_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
+        statusChar(STATUS_CHAR_UUID, statusData, 6, 6, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
         cmdChar(CMD_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE)
     {
+        // Inizializza statusData con valori di default
+        statusData[0] = 0; // credito
+        statusData[1] = 0; // stato
+        statusData[2] = 5; // scorte ACQUA
+        statusData[3] = 5; // scorte SNACK
+        statusData[4] = 5; // scorte CAFFE
+        statusData[5] = 5; // scorte THE
+
         GattCharacteristic *charTable[] = {&tempChar, &humChar, &statusChar, &cmdChar};
         GattService vendingService(VENDING_SERVICE_UUID, charTable, 4);
         ble.gattServer().addService(vendingService);
@@ -138,17 +150,26 @@ public:
     }
 
     void updateStatus(int credit, int state) {
-        uint8_t data[2] = {(uint8_t)credit, (uint8_t)state};
-        ble.gattServer().write(statusChar.getValueHandle(), data, 2);
+        // Aggiorna buffer con scorte
+        statusData[0] = (uint8_t)credit;
+        statusData[1] = (uint8_t)state;
+        statusData[2] = (uint8_t)scorte[1]; // ACQUA
+        statusData[3] = (uint8_t)scorte[2]; // SNACK
+        statusData[4] = (uint8_t)scorte[3]; // CAFFE
+        statusData[5] = (uint8_t)scorte[4]; // THE
+
+        // Invia notifica BLE
+        ble.gattServer().write(statusChar.getValueHandle(), statusData, 6);
     }
 
     GattAttribute::Handle_t getCmdHandle() { return cmdChar.getValueHandle(); }
 
 private:
     BLE &ble;
+    uint8_t statusData[6]; // Buffer per STATUS: [credito, stato, scorte[1-4]]
     ReadOnlyGattCharacteristic<int> tempChar;
     ReadOnlyGattCharacteristic<int> humChar;
-    ReadOnlyGattCharacteristic<int> statusChar;
+    ReadWriteGattCharacteristic<uint8_t[6]> statusChar;
     WriteOnlyGattCharacteristic<int> cmdChar;
 };
 
@@ -165,43 +186,72 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 uint8_t cmd = params.data[0];
 
                 // VALIDAZIONE COMANDO (SECURITY FIX)
-                if (cmd < 1 || (cmd > 4 && cmd != 9 && cmd != 10)) {
+                if (cmd < 1 || (cmd > 4 && cmd != 9 && cmd != 10 && cmd != 11)) {
                     printf("[SECURITY] Comando BLE invalido ricevuto: 0x%02X\n", cmd);
                     return; // Reject invalid commands
                 }
 
                 // 1. ACQUA (Ciano)
                 if (cmd == 1) {
+                    if (scorte[1] <= 0) {
+                        lcd.clear(); lcd.printf("ACQUA ESAURITA!");
+                        printf("[STOCK] ACQUA esaurita (scorte=%d)\n", scorte[1]);
+                        thread_sleep_for(1500);
+                        return;
+                    }
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
                     lcd.clear(); lcd.printf("Sel: ACQUA (1E)");
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: ACQUA (scorte=%d)\n", scorte[1]);
                 }
                 // 2. SNACK (Magenta)
                 else if (cmd == 2) {
+                    if (scorte[2] <= 0) {
+                        lcd.clear(); lcd.printf("SNACK ESAURITO!");
+                        printf("[STOCK] SNACK esaurito (scorte=%d)\n", scorte[2]);
+                        thread_sleep_for(1500);
+                        return;
+                    }
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
                     lcd.clear(); lcd.printf("Sel: SNACK (2E)");
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: SNACK (scorte=%d)\n", scorte[2]);
                 }
                 // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
+                    if (scorte[3] <= 0) {
+                        lcd.clear(); lcd.printf("CAFFE ESAURITO!");
+                        printf("[STOCK] CAFFE esaurito (scorte=%d)\n", scorte[3]);
+                        thread_sleep_for(1500);
+                        return;
+                    }
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
                     lcd.clear(); lcd.printf("Sel: CAFFE (1E)");
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: CAFFE (scorte=%d)\n", scorte[3]);
                 }
                 // 4. THE (Verde)
                 else if (cmd == 4) {
+                    if (scorte[4] <= 0) {
+                        lcd.clear(); lcd.printf("THE ESAURITO!");
+                        printf("[STOCK] THE esaurito (scorte=%d)\n", scorte[4]);
+                        thread_sleep_for(1500);
+                        return;
+                    }
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
                     lcd.clear(); lcd.printf("Sel: THE (2E)");
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
+                    printf("[BLE] Prodotto selezionato: THE (scorte=%d)\n", scorte[4]);
                 }
                 // 9. ANNULLA
                 else if (cmd == 9) {
                     if (credito > 0) {
                         lcd.clear(); lcd.printf("Annullato da App");
+                        printf("[ANNULLA] Operazione annullata da app. Resto: %dE\n", credito);
                         setRGB(1, 0, 1); // Viola momentaneo
                         thread_sleep_for(1000);
                         statoCorrente = RESTO; timerStato.reset(); timerStato.start();
@@ -230,6 +280,17 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                         timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
                     }
+                }
+                // 11. RIFORNIMENTO (reset scorte)
+                else if (cmd == 11) {
+                    scorte[1] = SCORTE_MAX; // ACQUA
+                    scorte[2] = SCORTE_MAX; // SNACK
+                    scorte[3] = SCORTE_MAX; // CAFFE
+                    scorte[4] = SCORTE_MAX; // THE
+                    lcd.clear(); lcd.printf("RIFORNIMENTO OK");
+                    printf("[STOCK] Rifornimento completato: tutte le scorte ripristinate a %d\n", SCORTE_MAX);
+                    thread_sleep_for(1500);
+                    if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
                 }
                 // Feedback visivo immediato della selezione
                 if(cmd >= 1 && cmd <= 4) thread_sleep_for(1000);
@@ -340,6 +401,7 @@ void updateMachine() {
             if (valid) {
                 vendingServicePtr->updateTemp(temp_copy);
                 vendingServicePtr->updateHum(hum_copy);
+                printf("[SENSORI] Temp: %d°C | Hum: %d%% | Dist: %dcm\n", temp_copy, hum_copy, dist);
             }
         }
 
@@ -349,6 +411,7 @@ void updateMachine() {
         dhtMutex.unlock();
 
         if (temp_check >= SOGLIA_TEMP && statoCorrente != ERRORE) {
+            printf("[ALLARME] Temperatura critica: %d°C (soglia: %d°C)\n", temp_check, SOGLIA_TEMP);
             statoCorrente = ERRORE; lcd.clear();
         }
     }
@@ -387,7 +450,14 @@ void updateMachine() {
     }
 
     if (statoCorrente != statoPrecedente) {
-        lcd.clear(); buzzer = 0; statoPrecedente = statoCorrente;
+        lcd.clear(); buzzer = 0;
+
+        // Log cambio stato con dettagli
+        const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
+        printf("[FSM] Cambio stato: %s -> %s | Credito: %dE | Prodotto: %d\n",
+               nomiStati[statoPrecedente], nomiStati[statoCorrente], credito, idProdotto);
+
+        statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
         if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
     }
@@ -464,18 +534,24 @@ void updateMachine() {
             lcd.printf("%s", buf2);
 
             if (tastoAnnulla == 0 && credito > 0) {
-                lcd.clear(); lcd.printf("Annullato Manual"); thread_sleep_for(1000);
+                lcd.clear(); lcd.printf("Annullato Manual");
+                printf("[ANNULLA] Operazione annullata da pulsante. Resto: %dE\n", credito);
+                thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito > 0 && credito < prezzoSelezionato && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                lcd.clear(); lcd.printf("Tempo Scaduto!"); thread_sleep_for(1000);
+                lcd.clear(); lcd.printf("Tempo Scaduto!");
+                printf("[TIMEOUT] Credito parziale scaduto. Resto: %dE\n", credito);
+                thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
             else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
                 // Timeout per credito residuo: vai a RESTO (no auto-erogazione)
-                lcd.clear(); lcd.printf("Tempo Scaduto!"); thread_sleep_for(1000);
+                lcd.clear(); lcd.printf("Tempo Scaduto!");
+                printf("[TIMEOUT] Credito residuo scaduto. Resto: %dE\n", credito);
+                thread_sleep_for(1000);
                 statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
@@ -499,6 +575,16 @@ void updateMachine() {
                 else servo.write(0.05f);
             } else {
                 buzzer = 0;
+
+                // Decrementa scorte per il prodotto erogato
+                if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] > 0) {
+                    scorte[idProdotto]--;
+                    printf("[EROGAZIONE] Prodotto %d erogato. Scorte rimanenti: %d\n", idProdotto, scorte[idProdotto]);
+                } else {
+                    printf("[ERRORE] Tentativo erogazione con scorte invalide: prodotto=%d, scorte=%d\n",
+                           idProdotto, (idProdotto >= 1 && idProdotto <= 4) ? scorte[idProdotto] : -1);
+                }
+
                 credito -= prezzoSelezionato;
 
                 // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
@@ -532,6 +618,7 @@ void updateMachine() {
             else buzzer = 0;
 
             if (timerStato.elapsed_time().count() > 3000000) {
+                printf("[RESTO] Resto di %dE restituito\n", credito);
                 buzzer = 0; credito = 0; statoCorrente = ATTESA_MONETA;
             }
             break;
