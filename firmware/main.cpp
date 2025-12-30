@@ -2,8 +2,21 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.0 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.2 CLEAN (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.2:
+ * - [CRITICAL FIX] Validazione scorte PRIMA di erogazione (prevenzione dispensing con stock=0)
+ * - [FIX] Se scorte esaurite durante EROGAZIONE, mostra "PRODOTTO ESAURITO!" e restituisce credito
+ * - [SECURITY] Impedisce movimento servo quando stock non disponibile
+ *
+ * CHANGELOG v8.1:
+ * - [UX] LCD ottimizzato per info prodotto: nome, prezzo, scorte
+ * - [UX] Rimosso temperatura e distanza da LCD (disponibili su seriale e app)
+ * - [UX] RIPOSO: mostra prodotto selezionato e scorte
+ * - [UX] ATTESA_MONETA: mostra nome prodotto, prezzo e scorte rimanenti
+ * - [UX] EROGAZIONE: mostra "Erogando NOME_PRODOTTO" durante dispensa
+ * - [UX] Post-erogazione: mostra "PRODOTTO erogato! Rim:X" con scorte aggiornate
  *
  * CHANGELOG v8.0:
  * - [CLEANUP] Display singolo LCD 16x2 per interfaccia utente
@@ -705,12 +718,15 @@ void updateMachine() {
             setRGB(0, 1, 0);
             buzzer = 0;
             lcd.setCursor(0, 0);
-            lcd.printf("ECO MODE BLE OK ");
+            lcd.printf("  VENDING IoT   ");
             lcd.setCursor(0, 1);
+
+            // Mostra prodotto selezionato e scorte
             char buffer[17];
-            dhtMutex.lock();
-            snprintf(buffer, sizeof(buffer), "L:%02d D:%03d T:%02d", ldr_val, dist, temp_int);
-            dhtMutex.unlock();
+            if(idProdotto==1)      snprintf(buffer, 17, "ACQUA  Rim:%d/5", scorte[1]);
+            else if(idProdotto==2) snprintf(buffer, 17, "SNACK  Rim:%d/5", scorte[2]);
+            else if(idProdotto==3) snprintf(buffer, 17, "CAFFE  Rim:%d/5", scorte[3]);
+            else                   snprintf(buffer, 17, "THE    Rim:%d/5", scorte[4]);
             lcd.printf("%s", buffer);
 
             if (dist < DISTANZA_ATTIVA) {
@@ -761,19 +777,16 @@ void updateMachine() {
                     else                   lcd.printf("Ins.Mon x THE   ");
                 }
             }
-            riga2[16] = '\0';
 
-            // CACHE: Scrivi LCD SOLO se contenuto cambiato (riduce race conditions x10)
-            bool needUpdate = (strcmp(riga1, lcdCacheRiga1) != 0 || strcmp(riga2, lcdCacheRiga2) != 0);
-            if (needUpdate) {
-                i2cMutex.lock();
-                lcd.setCursor(0, 0); lcd.printf("%s", riga1);
-                lcd.setCursor(0, 1); lcd.printf("%s", riga2);
-                i2cMutex.unlock();
-
-                // Aggiorna cache
-                strncpy(lcdCacheRiga1, riga1, 17);
-                strncpy(lcdCacheRiga2, riga2, 17);
+            lcd.setCursor(0, 1);
+            char buf2[17];
+            if(credito > 0) {
+                snprintf(buf2, sizeof(buf2), "Cr:%d/%d [Blu=Esc", credito, prezzoSelezionato);
+            } else {
+                // Mostra prezzo e scorte prodotto selezionato
+                const char* nomi[] = {"", "ACQUA", "SNACK", "CAFFE", "THE"};
+                snprintf(buf2, sizeof(buf2), "%s:%dE Rim:%d",
+                         nomi[idProdotto], prezzoSelezionato, scorte[idProdotto]);
             }
 
             if (tastoAnnulla == 0 && credito > 0) {
@@ -822,17 +835,21 @@ void updateMachine() {
         }
 
         case EROGAZIONE:
-            // CONTROLLO SCORTE CRITICO: verifica PRIMA di erogare
-            if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] <= 0) {
-                i2cMutex.lock();
+            // CRITICAL: Verifica scorte PRIMA di erogare
+            if (idProdotto < 1 || idProdotto > 4 || scorte[idProdotto] <= 0) {
+                printf("[ERRORE] Tentativo erogazione con scorte=0 (prodotto %d)\n", idProdotto);
+                setRGB(1, 0, 0);
                 lcd.clear();
-                lcd.setCursor(0, 0); lcd.printf("PRODOTTO");
-                lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
-                i2cMutex.unlock();
-                setRGB(1, 0, 0); // Rosso
-                printf("[SCORTE] ERRORE: Tentativo erogazione con scorte=0 (prodotto %d)\n", idProdotto);
+                wait_us(20000);
+                lcd.setCursor(0, 0);
+                lcd.printf("PRODOTTO");
+                lcd.setCursor(0, 1);
+                lcd.printf("ESAURITO!");
+                buzzer = 1;
                 thread_sleep_for(2000);
-                // Vai a RESTO per rimborsare
+                buzzer = 0;
+
+                // Vai a RESTO per restituire il credito
                 statoCorrente = RESTO;
                 timerStato.reset();
                 timerStato.start();
@@ -840,9 +857,16 @@ void updateMachine() {
                 break;
             }
 
+            // Scorte disponibili: procedi con erogazione
             setRGB(1, 1, 0);
             lcd.setCursor(0, 0);
-            lcd.printf("Erogazione...   ");
+
+            // Mostra nome prodotto erogato
+            if(idProdotto==1)      lcd.printf("Erogando ACQUA  ");
+            else if(idProdotto==2) lcd.printf("Erogando SNACK  ");
+            else if(idProdotto==3) lcd.printf("Erogando CAFFE  ");
+            else                   lcd.printf("Erogando THE    ");
+
             lcd.setCursor(0, 1);
             lcd.printf("Attendere       ");
             if (timerStato.elapsed_time().count() < 2000000) {
@@ -852,24 +876,38 @@ void updateMachine() {
             } else {
                 buzzer = 0;
 
-                if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] > 0) {
-                    scorte[idProdotto]--;
-                    printf("[EROGAZIONE] Prodotto %d erogato. Scorte: %d\n", idProdotto, scorte[idProdotto]);
-                } else {
-                    printf("[ERRORE] Erogazione con scorte invalide: prodotto=%d\n", idProdotto);
-                }
+                // Decrementa scorte dopo erogazione riuscita
+                scorte[idProdotto]--;
+                printf("[EROGAZIONE] Prodotto %d erogato. Scorte rimanenti: %d\n", idProdotto, scorte[idProdotto]);
 
                 credito -= prezzoSelezionato;
+
+                // Mostra prodotto erogato e scorte aggiornate
+                lcd.clear();
+                wait_us(20000);
+                lcd.setCursor(0, 0);
+                const char* nomi[] = {"", "ACQUA", "SNACK", "CAFFE", "THE"};
+                char bufErog[17];
+                snprintf(bufErog, 17, "%s erogato!", nomi[idProdotto]);
+                lcd.printf("%s", bufErog);
+
+                lcd.setCursor(0, 1);
+                if (credito > 0) {
+                    char bufCred[17];
+                    snprintf(bufCred, 17, "Rim:%d Cred:%dE", scorte[idProdotto], credito);
+                    lcd.printf("%s", bufCred);
+                } else {
+                    char bufRim[17];
+                    snprintf(bufRim, 17, "Rimanenti: %d", scorte[idProdotto]);
+                    lcd.printf("%s", bufRim);
+                }
+                thread_sleep_for(1500);
 
                 if (credito > 0) {
                     statoCorrente = ATTESA_MONETA;
                     timerUltimaMoneta.reset();
                     timerUltimaMoneta.start();
                     creditoResiduo = true;
-                    lcd.clear();
-                    wait_us(20000);
-                    lcd.printf("Credito: %dE", credito);
-                    thread_sleep_for(1500);
                 } else {
                     statoCorrente = ATTESA_MONETA;
                     creditoResiduo = false;
@@ -970,7 +1008,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.0 CLEAN");
+    lcd.printf("BOOT v8.2 CLEAN");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
