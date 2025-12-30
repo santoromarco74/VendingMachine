@@ -2,20 +2,22 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: GOLDEN MASTER v7.2 (FIXED: LDR Debouncing + DHT Thread + Validazione)
+ * VERSIONE: DUAL DISPLAY v7.3 (OLED SSD1306 + LCD 16x2)
  * ======================================================================================
  *
- * CHANGELOG v7.2:
- * - [CRITICAL FIX] Aggiunto debouncing robusto per sensore LDR (evita conteggi multipli)
- * - [CRITICAL FIX] DHT11 spostato in thread separato per evitare blocco main loop
- * - [SECURITY] Aggiunta validazione comandi BLE (reject comandi invalidi)
- * - [BUG FIX] Fix buffer overflow LCD con snprintf
- * - [BUG FIX] Fix timeout underflow con controllo signed/unsigned
- * - [IMPROVEMENT] Aggiunto watchdog timer per recovery automatico
- * - [UX] Aumentato tempo erogazione automatica da 2s a 5s (permette inserire più monete)
- * - [UX] Aggiunto countdown erogazione su LCD quando credito sufficiente
- * - [FEATURE] Acquisti multipli con timeout inattività: dopo erogazione permetti selezione
- *   altro prodotto. Timeout 30s di inattività → RESTO automatico. Annulla sempre disponibile.
+ * CHANGELOG v7.3:
+ * - [FEATURE] Aggiunto display OLED SSD1306 (128x32) per info diagnostiche sistema
+ * - [UX] Separazione interfacce: LCD per utente (prodotti), OLED per tecnico (diagnostica)
+ * - [DRIVER] Driver SSD1306 minimale embedded (auto-detect 0x3C/0x3D, font 5x7, 200 righe)
+ * - [I2C] Condivisione bus I2C tra LCD e OLED (indirizzi diversi: 0x4E e 0x3C)
+ * - [DISPLAY] OLED mostra: Stato FSM, Temp/Umidità, Distanza, LDR, Credito, Prodotto
+ * - [DISPLAY] LCD dedicato a: Messaggi utente, Prodotto selezionato, Countdown, Errori
+ * - [FEATURE] Acquisti multipli con conferma manuale (comando BLE 0x0A)
+ * - [BUG FIX] Tutti i fix di v7.2 (LDR debouncing, DHT thread, validazione BLE)
+ *
+ * HARDWARE RICHIESTO:
+ * - LCD I2C 16x2 (indirizzo 0x4E) su pin D14/D15
+ * - OLED SSD1306 0.91" 128x32 (indirizzo 0x3C) su pin D14/D15 (bus condiviso)
  */
 
 #include "mbed.h"
@@ -23,6 +25,216 @@
 #include "ble/Gap.h"
 #include "ble/GattServer.h"
 #include "TextLCD.h"
+
+// ======================================================================================
+// DRIVER SSD1306 OLED MINIMALE (128x32 / 128x64)
+// ======================================================================================
+class SSD1306 {
+private:
+    I2C *i2c;
+    uint8_t addr;
+    uint8_t width, height, pages;
+    uint8_t cursorX, cursorY;
+    bool initialized;
+
+    // Font 5x7 minimale per caratteri ASCII 32-126
+    static const uint8_t font5x7[95][5];
+
+    void command(uint8_t cmd) {
+        uint8_t data[2] = {0x00, cmd};
+        i2c->write(addr, (char*)data, 2);
+    }
+
+    void data(uint8_t* buf, int len) {
+        uint8_t temp[len + 1];
+        temp[0] = 0x40;
+        memcpy(temp + 1, buf, len);
+        i2c->write(addr, (char*)temp, len + 1);
+    }
+
+public:
+    SSD1306(PinName sda, PinName scl, uint8_t address = 0x3C, uint8_t h = 32)
+        : width(128), height(h), cursorX(0), cursorY(0), initialized(false) {
+        i2c = new I2C(sda, scl);
+        i2c->frequency(400000);
+        addr = address << 1;
+        pages = height / 8;
+    }
+
+    // Condividi bus I2C esistente (per usare stesso bus di LCD)
+    void attachToI2C(I2C* existingI2C, uint8_t address = 0x3C, uint8_t h = 32) {
+        i2c = existingI2C;
+        addr = address << 1;
+        height = h;
+        pages = height / 8;
+    }
+
+    bool init() {
+        // Auto-detect indirizzo: prova 0x3C poi 0x3D
+        for (uint8_t testAddr : {0x3C, 0x3D}) {
+            addr = testAddr << 1;
+            if (i2c->write(addr, NULL, 0) == 0) {
+                printf("[OLED] Trovato SSD1306 a 0x%02X, altezza=%d\n", testAddr, height);
+
+                // Sequenza init SSD1306
+                command(0xAE); // Display off
+                command(0xD5); command(0x80); // Clock div
+                command(0xA8); command(height - 1); // Multiplex
+                command(0xD3); command(0x00); // Display offset
+                command(0x40); // Start line
+                command(0x8D); command(0x14); // Charge pump ON
+                command(0x20); command(0x00); // Addressing mode horizontal
+                command(0xA1); // Segment remap
+                command(0xC8); // COM scan direction
+                command(0xDA); command(height == 32 ? 0x02 : 0x12); // COM pins
+                command(0x81); command(0x8F); // Contrast
+                command(0xD9); command(0xF1); // Precharge
+                command(0xDB); command(0x40); // VCOM detect
+                command(0xA4); // Display RAM
+                command(0xA6); // Normal display
+                command(0xAF); // Display on
+
+                initialized = true;
+                clear();
+                return true;
+            }
+        }
+        printf("[OLED] SSD1306 NON trovato (provato 0x3C, 0x3D)\n");
+        return false;
+    }
+
+    void clear() {
+        if (!initialized) return;
+        cursorX = 0; cursorY = 0;
+        command(0x21); command(0); command(127); // Column range
+        command(0x22); command(0); command(pages - 1); // Page range
+        uint8_t zero[128] = {0};
+        for (int p = 0; p < pages; p++) data(zero, 128);
+    }
+
+    void setCursor(uint8_t x, uint8_t y) {
+        cursorX = x; cursorY = y;
+    }
+
+    void printf(const char* format, ...) {
+        if (!initialized) return;
+        char buffer[64];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(buffer, sizeof(buffer), format, args);
+        va_end(args);
+
+        for (int i = 0; buffer[i] != '\0'; i++) {
+            drawChar(cursorX + i * 6, cursorY, buffer[i]);
+        }
+    }
+
+    void drawChar(uint8_t x, uint8_t page, char c) {
+        if (!initialized || c < 32 || c > 126) return;
+        uint8_t charData[6];
+        memcpy(charData, font5x7[c - 32], 5);
+        charData[5] = 0x00; // Spacing
+
+        command(0x21); command(x); command(x + 5);
+        command(0x22); command(page); command(page);
+        data(charData, 6);
+    }
+};
+
+// Font 5x7 ridotto (solo caratteri essenziali: 0-9, A-Z, spazio, :, /, %, °, C, E)
+const uint8_t SSD1306::font5x7[95][5] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00}, // space
+    {0x00, 0x00, 0x5F, 0x00, 0x00}, // !
+    {0x00, 0x07, 0x00, 0x07, 0x00}, // "
+    {0x14, 0x7F, 0x14, 0x7F, 0x14}, // #
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12}, // $
+    {0x23, 0x13, 0x08, 0x64, 0x62}, // %
+    {0x36, 0x49, 0x55, 0x22, 0x50}, // &
+    {0x00, 0x05, 0x03, 0x00, 0x00}, // '
+    {0x00, 0x1C, 0x22, 0x41, 0x00}, // (
+    {0x00, 0x41, 0x22, 0x1C, 0x00}, // )
+    {0x14, 0x08, 0x3E, 0x08, 0x14}, // *
+    {0x08, 0x08, 0x3E, 0x08, 0x08}, // +
+    {0x00, 0x50, 0x30, 0x00, 0x00}, // ,
+    {0x08, 0x08, 0x08, 0x08, 0x08}, // -
+    {0x00, 0x60, 0x60, 0x00, 0x00}, // .
+    {0x20, 0x10, 0x08, 0x04, 0x02}, // /
+    {0x3E, 0x51, 0x49, 0x45, 0x3E}, // 0
+    {0x00, 0x42, 0x7F, 0x40, 0x00}, // 1
+    {0x42, 0x61, 0x51, 0x49, 0x46}, // 2
+    {0x21, 0x41, 0x45, 0x4B, 0x31}, // 3
+    {0x18, 0x14, 0x12, 0x7F, 0x10}, // 4
+    {0x27, 0x45, 0x45, 0x45, 0x39}, // 5
+    {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 6
+    {0x01, 0x71, 0x09, 0x05, 0x03}, // 7
+    {0x36, 0x49, 0x49, 0x49, 0x36}, // 8
+    {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
+    {0x00, 0x36, 0x36, 0x00, 0x00}, // :
+    {0x00, 0x56, 0x36, 0x00, 0x00}, // ;
+    {0x08, 0x14, 0x22, 0x41, 0x00}, // <
+    {0x14, 0x14, 0x14, 0x14, 0x14}, // =
+    {0x00, 0x41, 0x22, 0x14, 0x08}, // >
+    {0x02, 0x01, 0x51, 0x09, 0x06}, // ?
+    {0x32, 0x49, 0x79, 0x41, 0x3E}, // @
+    {0x7E, 0x11, 0x11, 0x11, 0x7E}, // A
+    {0x7F, 0x49, 0x49, 0x49, 0x36}, // B
+    {0x3E, 0x41, 0x41, 0x41, 0x22}, // C
+    {0x7F, 0x41, 0x41, 0x22, 0x1C}, // D
+    {0x7F, 0x49, 0x49, 0x49, 0x41}, // E
+    {0x7F, 0x09, 0x09, 0x09, 0x01}, // F
+    {0x3E, 0x41, 0x49, 0x49, 0x7A}, // G
+    {0x7F, 0x08, 0x08, 0x08, 0x7F}, // H
+    {0x00, 0x41, 0x7F, 0x41, 0x00}, // I
+    {0x20, 0x40, 0x41, 0x3F, 0x01}, // J
+    {0x7F, 0x08, 0x14, 0x22, 0x41}, // K
+    {0x7F, 0x40, 0x40, 0x40, 0x40}, // L
+    {0x7F, 0x02, 0x0C, 0x02, 0x7F}, // M
+    {0x7F, 0x04, 0x08, 0x10, 0x7F}, // N
+    {0x3E, 0x41, 0x41, 0x41, 0x3E}, // O
+    {0x7F, 0x09, 0x09, 0x09, 0x06}, // P
+    {0x3E, 0x41, 0x51, 0x21, 0x5E}, // Q
+    {0x7F, 0x09, 0x19, 0x29, 0x46}, // R
+    {0x46, 0x49, 0x49, 0x49, 0x31}, // S
+    {0x01, 0x01, 0x7F, 0x01, 0x01}, // T
+    {0x3F, 0x40, 0x40, 0x40, 0x3F}, // U
+    {0x1F, 0x20, 0x40, 0x20, 0x1F}, // V
+    {0x3F, 0x40, 0x38, 0x40, 0x3F}, // W
+    {0x63, 0x14, 0x08, 0x14, 0x63}, // X
+    {0x07, 0x08, 0x70, 0x08, 0x07}, // Y
+    {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
+    {0x00, 0x7F, 0x41, 0x41, 0x00}, // [
+    {0x02, 0x04, 0x08, 0x10, 0x20}, // backslash
+    {0x00, 0x41, 0x41, 0x7F, 0x00}, // ]
+    {0x04, 0x02, 0x01, 0x02, 0x04}, // ^
+    {0x40, 0x40, 0x40, 0x40, 0x40}, // _
+    {0x00, 0x01, 0x02, 0x04, 0x00}, // `
+    {0x20, 0x54, 0x54, 0x54, 0x78}, // a
+    {0x7F, 0x48, 0x44, 0x44, 0x38}, // b
+    {0x38, 0x44, 0x44, 0x44, 0x20}, // c
+    {0x38, 0x44, 0x44, 0x48, 0x7F}, // d
+    {0x38, 0x54, 0x54, 0x54, 0x18}, // e
+    {0x08, 0x7E, 0x09, 0x01, 0x02}, // f
+    {0x0C, 0x52, 0x52, 0x52, 0x3E}, // g
+    {0x7F, 0x08, 0x04, 0x04, 0x78}, // h
+    {0x00, 0x44, 0x7D, 0x40, 0x00}, // i
+    {0x20, 0x40, 0x44, 0x3D, 0x00}, // j
+    {0x7F, 0x10, 0x28, 0x44, 0x00}, // k
+    {0x00, 0x41, 0x7F, 0x40, 0x00}, // l
+    {0x7C, 0x04, 0x18, 0x04, 0x78}, // m
+    {0x7C, 0x08, 0x04, 0x04, 0x78}, // n
+    {0x38, 0x44, 0x44, 0x44, 0x38}, // o
+    {0x7C, 0x14, 0x14, 0x14, 0x08}, // p
+    {0x08, 0x14, 0x14, 0x18, 0x7C}, // q
+    {0x7C, 0x08, 0x04, 0x04, 0x08}, // r
+    {0x48, 0x54, 0x54, 0x54, 0x20}, // s
+    {0x04, 0x3F, 0x44, 0x40, 0x20}, // t
+    {0x3C, 0x40, 0x40, 0x20, 0x7C}, // u
+    {0x1C, 0x20, 0x40, 0x20, 0x1C}, // v
+    {0x3C, 0x40, 0x30, 0x40, 0x3C}, // w
+    {0x44, 0x28, 0x10, 0x28, 0x44}, // x
+    {0x0C, 0x50, 0x50, 0x50, 0x3C}, // y
+    {0x44, 0x64, 0x54, 0x4C, 0x44}  // z
+};
 
 // --- CONFIGURAZIONE PIN ---
 #define PIN_TRIG    A1
@@ -70,6 +282,7 @@ Stato statoPrecedente = ERRORE;
 
 // --- OGGETTI DRIVER ---
 TextLCD lcd(PIN_LCD_SDA, PIN_LCD_SCL, 0x4E);
+SSD1306 oled(PIN_LCD_SDA, PIN_LCD_SCL, 0x3C, 32);  // Condivide bus I2C, auto-detect 0x3C/0x3D
 DigitalOut trig(PIN_TRIG);
 InterruptIn echo(PIN_ECHO);
 DigitalInOut dht(PIN_DHT);
@@ -106,12 +319,20 @@ int contatoreAssenza = 0;
 int ldrSampleCount = 0;     // Nuovo: contatore campioni per debouncing
 bool creditoResiduo = false; // Flag: true se credito da erogazione precedente
 
+// Cache LCD per stato ATTESA_MONETA (evita scritture inutili che aumentano race conditions)
+char lcdCacheRiga1[17] = "";
+char lcdCacheRiga2[17] = "";
+
 // --- GESTIONE SCORTE (Virtual Inventory) ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
 const int SCORTE_MAX = 5;        // Capacità massima per prodotto
 
 // Mutex per proteggere accesso a temp_int e hum_int tra thread
 Mutex dhtMutex;
+
+// Mutex per proteggere BUS I2C condiviso (LCD 0x4E + OLED 0x3C)
+// CRITICO: LCD e OLED condividono SDA/SCL - senza questo mutex si corrompono a vicenda!
+Mutex i2cMutex;
 
 // Watchdog timer
 Watchdog &watchdog = Watchdog::get_instance();
@@ -150,7 +371,7 @@ public:
     }
 
     void updateStatus(int credit, int state) {
-        // Aggiorna buffer con scorte
+        // Aggiorna array locale
         statusData[0] = (uint8_t)credit;
         statusData[1] = (uint8_t)state;
         statusData[2] = (uint8_t)scorte[1]; // ACQUA
@@ -160,6 +381,8 @@ public:
 
         // Invia notifica BLE
         ble.gattServer().write(statusChar.getValueHandle(), statusData, 6);
+        printf("[BLE] STATUS inviato: credito=%d, stato=%d, scorte=[%d,%d,%d,%d]\n",
+               credit, state, scorte[1], scorte[2], scorte[3], scorte[4]);
     }
 
     GattAttribute::Handle_t getCmdHandle() { return cmdChar.getValueHandle(); }
@@ -193,44 +416,100 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 
                 // 1. ACQUA (Ciano)
                 if (cmd == 1) {
-                    if (scorte[1] <= 0) {
-                        printf("[STOCK] ACQUA esaurita (scorte=%d)\n", scorte[1]);
+                    if (scorte[1] == 0) {
+                        i2cMutex.lock();
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("ACQUA");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        i2cMutex.unlock();
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] ACQUA esaurito\n");
+                        thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 1; prezzoSelezionato = PREZZO_ACQUA;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("ACQUA - 1.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[1]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(0, 1, 1);
                     timerUltimaMoneta.reset();
                     printf("[BLE] Prodotto selezionato: ACQUA (scorte=%d)\n", scorte[1]);
                 }
                 // 2. SNACK (Magenta)
                 else if (cmd == 2) {
-                    if (scorte[2] <= 0) {
-                        printf("[STOCK] SNACK esaurito (scorte=%d)\n", scorte[2]);
+                    if (scorte[2] == 0) {
+                        i2cMutex.lock();
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("SNACK");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        i2cMutex.unlock();
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] SNACK esaurito\n");
+                        thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 2; prezzoSelezionato = PREZZO_SNACK;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("SNACK - 2.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[2]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(1, 0, 1);
                     timerUltimaMoneta.reset();
                     printf("[BLE] Prodotto selezionato: SNACK (scorte=%d)\n", scorte[2]);
                 }
                 // 3. CAFFE (Giallo = R+G)
                 else if (cmd == 3) {
-                    if (scorte[3] <= 0) {
-                        printf("[STOCK] CAFFE esaurito (scorte=%d)\n", scorte[3]);
+                    if (scorte[3] == 0) {
+                        i2cMutex.lock();
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("CAFFE");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        i2cMutex.unlock();
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] CAFFE esaurito\n");
+                        thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 3; prezzoSelezionato = PREZZO_CAFFE;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("CAFFE - 1.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[3]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(1, 1, 0);
                     timerUltimaMoneta.reset();
                     printf("[BLE] Prodotto selezionato: CAFFE (scorte=%d)\n", scorte[3]);
                 }
                 // 4. THE (Verde)
                 else if (cmd == 4) {
-                    if (scorte[4] <= 0) {
-                        printf("[STOCK] THE esaurito (scorte=%d)\n", scorte[4]);
+                    if (scorte[4] == 0) {
+                        i2cMutex.lock();
+                        lcd.clear();
+                        lcd.setCursor(0, 0); lcd.printf("THE");
+                        lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                        i2cMutex.unlock();
+                        setRGB(1, 0, 0); // Rosso
+                        printf("[SCORTE] THE esaurito\n");
+                        thread_sleep_for(2000);
                         return;
                     }
                     idProdotto = 4; prezzoSelezionato = PREZZO_THE;
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("THE   - 2.00EUR");
+                    char buf[17];
+                    snprintf(buf, 16, "Rimanenti: %d", scorte[4]);
+                    lcd.setCursor(0, 1); lcd.printf("%s", buf);
+                    i2cMutex.unlock();
                     setRGB(0, 1, 0);
                     timerUltimaMoneta.reset();
                     printf("[BLE] Prodotto selezionato: THE (scorte=%d)\n", scorte[4]);
@@ -238,7 +517,9 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                 // 9. ANNULLA
                 else if (cmd == 9) {
                     if (credito > 0) {
-                        printf("[ANNULLA] Operazione annullata da app. Resto: %dE\n", credito);
+                        i2cMutex.lock();
+                        lcd.clear(); lcd.printf("Annullato da App");
+                        i2cMutex.unlock();
                         setRGB(1, 0, 1); // Viola momentaneo
                         statoCorrente = RESTO; timerStato.reset(); timerStato.start();
                         vendingServicePtr->updateStatus(credito, statoCorrente);
@@ -250,10 +531,19 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                            credito, prezzoSelezionato, statoCorrente);
 
                     if (statoCorrente != ATTESA_MONETA) {
+                        i2cMutex.lock();
+                        lcd.clear(); lcd.printf("Stato Invalido!");
+                        i2cMutex.unlock();
                         printf("[BLE] Conferma rifiutata: stato non ATTESA_MONETA\n");
                     } else if (credito < prezzoSelezionato) {
+                        i2cMutex.lock();
+                        lcd.clear(); lcd.printf("Credito Insuffic");
+                        i2cMutex.unlock();
                         printf("[BLE] Conferma rifiutata: credito insufficiente\n");
                     } else {
+                        i2cMutex.lock();
+                        lcd.clear(); lcd.printf("Confermato!");
+                        i2cMutex.unlock();
                         printf("[BLE] Conferma accettata: avvio erogazione\n");
                         statoCorrente = EROGAZIONE;
                         timerStato.reset();
@@ -276,12 +566,33 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 };
 
 // ======================================================================================
-// GESTORE EVENTI GAP (Disconnessione)
+// GESTORE EVENTI GAP (Connessione/Disconnessione)
 // ======================================================================================
 class VendingGapEventHandler : public ble::Gap::EventHandler {
 public:
+    void onConnectionComplete(const ble::ConnectionCompleteEvent &event) override {
+        printf("[BLE] Client connesso - scheduling dati iniziali...\n");
+        // Schedula invio dati dopo 2.5s per dare tempo all'app di abilitare notifiche
+        // Usa event_queue per non bloccare il thread BLE
+        event_queue.call_in(std::chrono::milliseconds(2500), []() {
+            if (vendingServicePtr) {
+                dhtMutex.lock();
+                int temp_copy = temp_int;
+                int hum_copy = hum_int;
+                dhtMutex.unlock();
+
+                vendingServicePtr->updateStatus(credito, statoCorrente);
+                vendingServicePtr->updateTemp(temp_copy);
+                vendingServicePtr->updateHum(hum_copy);
+                printf("[BLE] Dati iniziali inviati: credito=%d, stato=%d, scorte=[%d,%d,%d,%d], T=%d, H=%d\n",
+                       credito, statoCorrente, scorte[1], scorte[2], scorte[3], scorte[4], temp_copy, hum_copy);
+            }
+        });
+    }
+
     void onDisconnectionComplete(const ble::DisconnectionCompleteEvent &event) override {
         BLE::Instance().gap().startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
+        printf("[BLE] Client disconnesso\n");
     }
 };
 
@@ -435,20 +746,49 @@ void updateMachine() {
 
         statoPrecedente = statoCorrente;
         contatorePresenza = 0; contatoreAssenza = 0;
+
+        // Invalida cache LCD (forza riscrittura dopo cambio stato)
+        lcdCacheRiga1[0] = '\0';
+        lcdCacheRiga2[0] = '\0';
+
+        // Aggiorna OLED solo al cambio stato (evita sfarfallio) - 4 righe font piccolo
+        // PROTEGGI BUS I2C: OLED e LCD condividono SDA/SCL
+        dhtMutex.lock();
+        int temp_copy = temp_int;
+        int hum_copy = hum_int;
+        dhtMutex.unlock();
+
+        i2cMutex.lock();
+        oled.clear();
+
+        // Riga 0: Stato
+        oled.setCursor(0, 0);
+        if (statoCorrente == RIPOSO) oled.printf("RIPOSO - BLE OK");
+        else if (statoCorrente == ATTESA_MONETA) oled.printf("ATTESA MONETA");
+        else if (statoCorrente == EROGAZIONE) oled.printf("EROGAZIONE");
+        else if (statoCorrente == RESTO) oled.printf("RESTO");
+        else if (statoCorrente == ERRORE) oled.printf("!!! ERRORE !!!");
+
+        // Riga 1: Temperatura e Umidità
+        oled.setCursor(0, 1); oled.printf("T:%dC H:%d%%", temp_copy, hum_copy);
+
+        // Riga 2: Credito e Prodotto
+        oled.setCursor(0, 2); oled.printf("Cr:%dE Prod:%d", credito, idProdotto);
+
+        // Riga 3: Distanza e LDR
+        oled.setCursor(0, 3); oled.printf("D:%dcm L:%d", dist, ldr_val);
+        i2cMutex.unlock();
+
         if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
     }
 
     switch (statoCorrente) {
         case RIPOSO:
             setRGB(0, 1, 0); buzzer = 0;
-            lcd.setCursor(0, 0); lcd.printf("ECO MODE BLE OK ");
-            lcd.setCursor(0, 1);
-            // Fix buffer overflow con snprintf
-            char buffer[17];
-            dhtMutex.lock();
-            snprintf(buffer, sizeof(buffer), "L:%02d D:%03d T:%02d", ldr_val, dist, temp_int);
-            dhtMutex.unlock();
-            lcd.printf("%s", buffer);
+            i2cMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("Avvicinati per  ");
+            lcd.setCursor(0, 1); lcd.printf("iniziare...     ");
+            i2cMutex.unlock();
 
             if (dist < DISTANZA_ATTIVA) {
                 if (++contatorePresenza > FILTRO_INGRESSO) statoCorrente = ATTESA_MONETA;
@@ -462,52 +802,47 @@ void updateMachine() {
             else if (idProdotto == 3) setRGB(1, 1, 0); // Caffe
             else setRGB(0, 1, 0);                      // The
 
-            buzzer = 0; lcd.setCursor(0, 0);
+            buzzer = 0;
             uint64_t tempoPassato = timerUltimaMoneta.elapsed_time().count();
-
-            // Fix timeout underflow con controllo esplicito
             int secondiMancanti = 0;
             if (tempoPassato < TIMEOUT_RESTO_AUTO) {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
-                // Mostra countdown erogazione solo per credito fresco (non residuo)
-                int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Erog. in %ds...", secondiErogazione);
-                lcd.printf("%s", buf);
-            } else if (credito >= prezzoSelezionato && creditoResiduo) {
-                // Credito residuo: mostra solo credito e timeout RESTO (no auto-erogazione)
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
-                lcd.printf("%s", buf);
-            } else {
-                if (credito > 0 && credito < prezzoSelezionato) {
-                    // Credito parziale - mostra timeout
-                    char buf[17];
-                    snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
-                    lcd.printf("%s", buf);
-                } else if (credito == 0) {
-                    // Nessun credito - mostra messaggio inserimento
-                    if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
-                    else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
-                    else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
-                    else                   lcd.printf("Ins.Mon x THE   ");
-                }
-            }
+            // Prepara dati LCD fuori dal lock (veloce)
+            char riga1[17], riga2[17];
+            if(idProdotto==1)      snprintf(riga1, sizeof(riga1), "ACQUA - 1.00EUR");
+            else if(idProdotto==2) snprintf(riga1, sizeof(riga1), "SNACK - 2.00EUR");
+            else if(idProdotto==3) snprintf(riga1, sizeof(riga1), "CAFFE - 1.00EUR");
+            else                   snprintf(riga1, sizeof(riga1), "THE   - 2.00EUR");
 
-            lcd.setCursor(0, 1);
-            char buf2[17];
-            if(credito > 0) {
-                snprintf(buf2, sizeof(buf2), "Cr:%d/%d [Blu=Esc", credito, prezzoSelezionato);
+            memset(riga2, ' ', 16);
+            riga2[16] = '\0';
+            if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
+                int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
+                snprintf(riga2, 16, "Cr:%dE Erog:%ds", credito, secondiErogazione);
+            } else if (credito >= prezzoSelezionato && creditoResiduo) {
+                snprintf(riga2, 16, "Cr:%dE ConfApp", credito);
+            } else if (credito > 0 && credito < prezzoSelezionato) {
+                int mancante = prezzoSelezionato - credito;
+                snprintf(riga2, 16, "Cr:%dE Manca%dE", credito, mancante);
             } else {
-                dhtMutex.lock();
-                int temp_copy = temp_int;
-                dhtMutex.unlock();
-                snprintf(buf2, sizeof(buf2), "Prz:%dE D:%03d T:%02d", prezzoSelezionato, dist, temp_copy);
+                snprintf(riga2, 16, "Inserisci moneta");
             }
-            lcd.printf("%s", buf2);
+            riga2[16] = '\0';
+
+            // CACHE: Scrivi LCD SOLO se contenuto cambiato (riduce race conditions x10)
+            bool needUpdate = (strcmp(riga1, lcdCacheRiga1) != 0 || strcmp(riga2, lcdCacheRiga2) != 0);
+            if (needUpdate) {
+                i2cMutex.lock();
+                lcd.setCursor(0, 0); lcd.printf("%s", riga1);
+                lcd.setCursor(0, 1); lcd.printf("%s", riga2);
+                i2cMutex.unlock();
+
+                // Aggiorna cache
+                strncpy(lcdCacheRiga1, riga1, 17);
+                strncpy(lcdCacheRiga2, riga2, 17);
+            }
 
             if (tastoAnnulla == 0 && credito > 0) {
                 lcd.clear(); wait_us(20000); lcd.printf("Annullato Manual");
@@ -538,13 +873,40 @@ void updateMachine() {
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
                 if (++contatoreAssenza > FILTRO_USCITA) statoCorrente = RIPOSO;
             } else contatoreAssenza = 0;
+
             break;
         }
 
         case EROGAZIONE:
+            // CONTROLLO SCORTE CRITICO: verifica PRIMA di erogare
+            if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] <= 0) {
+                i2cMutex.lock();
+                lcd.clear();
+                lcd.setCursor(0, 0); lcd.printf("PRODOTTO");
+                lcd.setCursor(0, 1); lcd.printf("ESAURITO!");
+                i2cMutex.unlock();
+                setRGB(1, 0, 0); // Rosso
+                printf("[SCORTE] ERRORE: Tentativo erogazione con scorte=0 (prodotto %d)\n", idProdotto);
+                thread_sleep_for(2000);
+                // Vai a RESTO per rimborsare
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
+                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                break;
+            }
+
             setRGB(1, 1, 0);
-            lcd.setCursor(0, 0); lcd.printf("Erogazione...   ");
+            // Mostra prodotto che si sta erogando (protetto con mutex)
+            i2cMutex.lock();
+            lcd.setCursor(0, 0);
+            if(idProdotto==1)      lcd.printf("Eroga ACQUA...  ");
+            else if(idProdotto==2) lcd.printf("Eroga SNACK...  ");
+            else if(idProdotto==3) lcd.printf("Eroga CAFFE...  ");
+            else                   lcd.printf("Eroga THE...    ");
             lcd.setCursor(0, 1); lcd.printf("Attendere       ");
+            i2cMutex.unlock();
+
             if (timerStato.elapsed_time().count() < 2000000) {
                 buzzer = 1;
                 if (timerStato.elapsed_time().count() < 1000000) servo.write(0.10f);
@@ -563,6 +925,12 @@ void updateMachine() {
 
                 credito -= prezzoSelezionato;
 
+                // GESTIONE SCORTE: Decrementa scorta prodotto erogato
+                if (idProdotto >= 1 && idProdotto <= 4) {
+                    scorte[idProdotto]--;
+                    printf("[SCORTE] Erogato prodotto %d, rimanenti: %d\n", idProdotto, scorte[idProdotto]);
+                }
+
                 // ACQUISTI MULTIPLI: se c'è credito residuo, permetti altra selezione
                 // ma con timeout di 30s per inattività → RESTO automatico
                 if (credito > 0) {
@@ -570,8 +938,17 @@ void updateMachine() {
                     timerUltimaMoneta.reset();  // Reset timer per timeout inattività
                     timerUltimaMoneta.start();
                     creditoResiduo = true;      // Marca credito come residuo (no erogazione auto)
-                    lcd.clear(); wait_us(20000);
-                    lcd.printf("Credito: %dE", credito);
+                    char msg1[17], msg2[17];
+                    memset(msg1, ' ', 16); msg1[16] = '\0';
+                    memset(msg2, ' ', 16); msg2[16] = '\0';
+                    snprintf(msg1, 16, "Credito: %d.00E", credito);
+                    snprintf(msg2, 16, "Scegli prodotto");
+                    msg1[16] = '\0'; msg2[16] = '\0';
+                    i2cMutex.lock();
+                    lcd.clear();
+                    lcd.setCursor(0, 0); lcd.printf("%s", msg1);
+                    lcd.setCursor(0, 1); lcd.printf("%s", msg2);
+                    i2cMutex.unlock();
                     thread_sleep_for(1500);  // Mostra credito residuo
                 } else {
                     statoCorrente = ATTESA_MONETA;
@@ -582,13 +959,15 @@ void updateMachine() {
             }
             break;
 
-        case RESTO:
+        case RESTO: {
             setRGB(1, 0, 1);
-            lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
-            lcd.setCursor(0, 1);
             char bufResto[17];
-            snprintf(bufResto, sizeof(bufResto), "Monete: %d", credito);
-            lcd.printf("%s", bufResto);
+            snprintf(bufResto, sizeof(bufResto), "Importo: %d.00E ", credito);
+
+            i2cMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("Ritira Resto    ");
+            lcd.setCursor(0, 1); lcd.printf("%s", bufResto);
+            i2cMutex.unlock();
 
             if ((timerStato.elapsed_time().count() % 400000) < 200000) buzzer = 1;
             else buzzer = 0;
@@ -598,25 +977,27 @@ void updateMachine() {
                 buzzer = 0; credito = 0; statoCorrente = ATTESA_MONETA;
             }
             break;
+        }
 
-        case ERRORE:
+        case ERRORE: {
             blinkTimer++;
             if (blinkTimer % 2 == 0) { setRGB(1, 0, 0); buzzer = 1; }
             else { setRGB(0, 0, 0); buzzer = 0; }
 
-            lcd.setCursor(0, 0); lcd.printf("! ALLARME TEMP !");
-            lcd.setCursor(0, 1);
             char bufErr[17];
             dhtMutex.lock();
             snprintf(bufErr, sizeof(bufErr), "T:%dC > %dC", temp_int, SOGLIA_TEMP);
-            dhtMutex.unlock();
-            lcd.printf("%s", bufErr);
-
-            dhtMutex.lock();
             int temp_check = temp_int;
             dhtMutex.unlock();
+
+            i2cMutex.lock();
+            lcd.setCursor(0, 0); lcd.printf("! ALLARME TEMP !");
+            lcd.setCursor(0, 1); lcd.printf("%s", bufErr);
+            i2cMutex.unlock();
+
             if (temp_check <= (SOGLIA_TEMP - 2)) statoCorrente = RIPOSO;
             break;
+        }
     }
 }
 
@@ -654,7 +1035,17 @@ void scheduleBleEventsProcessing(BLE::OnEventsToProcessCallbackContext *context)
 int main() {
     thread_sleep_for(200); servo.period_ms(20); servo.write(0.05f);
     echo.rise(&echoRise); echo.fall(&echoFall);
-    lcd.begin(); lcd.backlight(); lcd.clear(); wait_us(20000); lcd.setCursor(0,0); lcd.printf("BOOT v7.2 FIXED");
+
+    // Init I2C devices (LCD e OLED condividono bus)
+    // Non serve mutex qui: esecuzione seriale all'avvio prima del BLE
+    lcd.begin(); lcd.backlight(); lcd.clear(); lcd.setCursor(0,0); lcd.printf("BOOT v7.3 DUAL");
+
+    // Inizializza OLED SSD1306
+    if (oled.init()) {
+        oled.setCursor(0, 0); oled.printf("Vending v7.3");
+        oled.setCursor(0, 1); oled.printf("OLED Ready!");
+    }
+
     buzzer = 1; thread_sleep_for(100); buzzer = 0;
     timerUltimaMoneta.start();
     ldrDebounceTimer.reset(); // Inizializza timer debouncing
