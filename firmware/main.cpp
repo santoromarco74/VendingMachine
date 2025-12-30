@@ -125,8 +125,8 @@ public:
         ble(_ble),
         tempChar(TEMP_CHAR_UUID, &initial_temp, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
         humChar(HUM_CHAR_UUID, &initial_hum, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
-        statusChar(STATUS_CHAR_UUID, statusData, 6, 6, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY),
-        cmdChar(CMD_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE)
+        cmdChar(CMD_CHAR_UUID, &initial_credit, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE),
+        statusChar(STATUS_CHAR_UUID, statusData, 6, 6, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY)
     {
         // Inizializza statusData con valori di default
         statusData[0] = 0; // credito
@@ -169,8 +169,8 @@ private:
     uint8_t statusData[6]; // Buffer per STATUS: [credito, stato, scorte[1-4]]
     ReadOnlyGattCharacteristic<int> tempChar;
     ReadOnlyGattCharacteristic<int> humChar;
-    ReadWriteGattCharacteristic<uint8_t[6]> statusChar;
     WriteOnlyGattCharacteristic<int> cmdChar;
+    GattCharacteristic statusChar; // Array characteristic (6 bytes)
 };
 
 VendingService *vendingServicePtr = nullptr;
