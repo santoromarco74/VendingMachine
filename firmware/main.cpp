@@ -2,8 +2,13 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.1 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.2 CLEAN (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.2:
+ * - [CRITICAL FIX] Validazione scorte PRIMA di erogazione (prevenzione dispensing con stock=0)
+ * - [FIX] Se scorte esaurite durante EROGAZIONE, mostra "PRODOTTO ESAURITO!" e restituisce credito
+ * - [SECURITY] Impedisce movimento servo quando stock non disponibile
  *
  * CHANGELOG v8.1:
  * - [UX] LCD ottimizzato per info prodotto: nome, prezzo, scorte
@@ -557,6 +562,29 @@ void updateMachine() {
         }
 
         case EROGAZIONE:
+            // CRITICAL: Verifica scorte PRIMA di erogare
+            if (idProdotto < 1 || idProdotto > 4 || scorte[idProdotto] <= 0) {
+                printf("[ERRORE] Tentativo erogazione con scorte=0 (prodotto %d)\n", idProdotto);
+                setRGB(1, 0, 0);
+                lcd.clear();
+                wait_us(20000);
+                lcd.setCursor(0, 0);
+                lcd.printf("PRODOTTO");
+                lcd.setCursor(0, 1);
+                lcd.printf("ESAURITO!");
+                buzzer = 1;
+                thread_sleep_for(2000);
+                buzzer = 0;
+
+                // Vai a RESTO per restituire il credito
+                statoCorrente = RESTO;
+                timerStato.reset();
+                timerStato.start();
+                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                break;
+            }
+
+            // Scorte disponibili: procedi con erogazione
             setRGB(1, 1, 0);
             lcd.setCursor(0, 0);
 
@@ -575,12 +603,9 @@ void updateMachine() {
             } else {
                 buzzer = 0;
 
-                if (idProdotto >= 1 && idProdotto <= 4 && scorte[idProdotto] > 0) {
-                    scorte[idProdotto]--;
-                    printf("[EROGAZIONE] Prodotto %d erogato. Scorte: %d\n", idProdotto, scorte[idProdotto]);
-                } else {
-                    printf("[ERRORE] Erogazione con scorte invalide: prodotto=%d\n", idProdotto);
-                }
+                // Decrementa scorte dopo erogazione riuscita
+                scorte[idProdotto]--;
+                printf("[EROGAZIONE] Prodotto %d erogato. Scorte rimanenti: %d\n", idProdotto, scorte[idProdotto]);
 
                 credito -= prezzoSelezionato;
 
@@ -702,7 +727,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.1 CLEAN");
+    lcd.printf("BOOT v8.2 CLEAN");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
