@@ -2,13 +2,22 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.3 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.4 CLEAN (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.4:
+ * - [UX MAJOR] Rimossa erogazione automatica: richiede SEMPRE conferma esplicita
+ * - [UX] Utente può inserire monete e cambiare prodotto liberamente
+ * - [UX] LCD mostra "Premi CONFERMA!" quando credito è sufficiente
+ * - [UX] Timeout unico 30s per resto (sia credito parziale che completo)
+ * - [LOGIC] Erogazione solo tramite comando BLE 10 (pulsante CONFERMA ACQUISTO)
+ * - [BEHAVIOR] Logica standard distributori automatici: inserisci → selezioni → confermi
  *
  * CHANGELOG v8.3:
  * - [FIX] Aggiunti delay 500us tra setCursor/printf per prevenire corruzione LCD
  * - [FIX] Tutte operazioni LCD ora hanno timing corretto per stabilità display
  * - [STABILITY] Risolti problemi visualizzazione LCD con operazioni consecutive
+ * - [HARDWARE] Confermato: LED RGB GND mancante causava ground bounce → LCD corruption
  *
  * CHANGELOG v8.2:
  * - [CRITICAL FIX] Validazione scorte PRIMA di erogazione (prevenzione dispensing con stock=0)
@@ -55,7 +64,7 @@
 #define DISTANZA_ATTIVA   40
 #define SOGLIA_TEMP       28
 #define TIMEOUT_RESTO_AUTO 30000000
-#define TIMEOUT_EROGAZIONE_AUTO 5000000
+// TIMEOUT_EROGAZIONE_AUTO rimosso in v8.4: erogazione solo su conferma esplicita (cmd 10)
 
 // --- DEBOUNCING LDR ---
 #define LDR_DEBOUNCE_SAMPLES 5
@@ -492,26 +501,23 @@ void updateMachine() {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato < TIMEOUT_EROGAZIONE_AUTO) {
-                int secondiErogazione = (TIMEOUT_EROGAZIONE_AUTO - tempoPassato) / 1000000;
+            // Mostra stato credito e richiesta conferma
+            if (credito >= prezzoSelezionato) {
+                // Credito sufficiente: richiede conferma esplicita
                 char buf[17];
-                snprintf(buf, sizeof(buf), "Erog. in %ds...", secondiErogazione);
+                snprintf(buf, sizeof(buf), "Premi CONFERMA!");
                 lcd.printf("%s", buf);
-            } else if (credito >= prezzoSelezionato && creditoResiduo) {
+            } else if (credito > 0 && credito < prezzoSelezionato) {
+                // Credito parziale: mostra quanto manca
                 char buf[17];
                 snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
                 lcd.printf("%s", buf);
             } else {
-                if (credito > 0 && credito < prezzoSelezionato) {
-                    char buf[17];
-                    snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
-                    lcd.printf("%s", buf);
-                } else if (credito == 0) {
-                    if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
-                    else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
-                    else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
-                    else                   lcd.printf("Ins.Mon x THE   ");
-                }
+                // Credito zero: mostra prodotto selezionato
+                if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
+                else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
+                else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
+                else                   lcd.printf("Ins.Mon x THE   ");
             }
 
             wait_us(500);
@@ -519,7 +525,8 @@ void updateMachine() {
             wait_us(500);
             char buf2[17];
             if(credito > 0) {
-                snprintf(buf2, sizeof(buf2), "Cr:%d/%d [Blu=Esc", credito, prezzoSelezionato);
+                // Mostra credito e timeout resto
+                snprintf(buf2, sizeof(buf2), "Cr:%d/%d T:%02ds", credito, prezzoSelezionato, secondiMancanti);
             } else {
                 // Mostra prezzo e scorte prodotto selezionato
                 const char* nomi[] = {"", "ACQUA", "SNACK", "CAFFE", "THE"};
@@ -528,7 +535,9 @@ void updateMachine() {
             }
             lcd.printf("%s", buf2);
 
+            // Gestione eventi
             if (tastoAnnulla == 0 && credito > 0) {
+                // Annullamento manuale con pulsante
                 lcd.clear();
                 wait_us(20000);
                 lcd.printf("Annullato Manual");
@@ -539,34 +548,20 @@ void updateMachine() {
                 timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
             }
-            else if (credito > 0 && credito < prezzoSelezionato && tempoPassato > TIMEOUT_RESTO_AUTO) {
+            else if (credito > 0 && tempoPassato > TIMEOUT_RESTO_AUTO) {
+                // Timeout 30s: restituisci qualsiasi credito (parziale o completo)
                 lcd.clear();
                 wait_us(20000);
                 lcd.printf("Tempo Scaduto!");
-                printf("[TIMEOUT] Credito parziale - Resto: %dE\n", credito);
+                printf("[TIMEOUT] Resto automatico - Credito: %dE\n", credito);
                 thread_sleep_for(1000);
                 statoCorrente = RESTO;
                 timerStato.reset();
                 timerStato.start();
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
-            }
-            else if (credito >= prezzoSelezionato && creditoResiduo && tempoPassato > TIMEOUT_RESTO_AUTO) {
-                lcd.clear();
-                wait_us(20000);
-                lcd.printf("Tempo Scaduto!");
-                printf("[TIMEOUT] Credito residuo - Resto: %dE\n", credito);
-                thread_sleep_for(1000);
-                statoCorrente = RESTO;
-                timerStato.reset();
-                timerStato.start();
-                if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
-            }
-            else if (credito >= prezzoSelezionato && !creditoResiduo && tempoPassato > TIMEOUT_EROGAZIONE_AUTO) {
-                statoCorrente = EROGAZIONE;
-                timerStato.reset();
-                timerStato.start();
             }
             else if (dist > (DISTANZA_ATTIVA + 20) && credito == 0) {
+                // Ritorno a RIPOSO se utente si allontana senza credito
                 if (++contatoreAssenza > FILTRO_USCITA) statoCorrente = RIPOSO;
             } else contatoreAssenza = 0;
             break;
@@ -747,7 +742,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.3 CLEAN");
+    lcd.printf("BOOT v8.4 CLEAN");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
