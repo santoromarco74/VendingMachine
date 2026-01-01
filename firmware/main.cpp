@@ -2,8 +2,18 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.7 CLEAN (Stock Management + LCD + Keypad + Sonar Optimized)
+ * VERSIONE: v8.8 CLEAN (Pin Optimization + Performance)
  * ======================================================================================
+ *
+ * CHANGELOG v8.8:
+ * - [HARDWARE] Riorganizzazione pin per raggruppamento per device
+ * - [WIRING] Tastiera 4x3: righe D10-13, colonne A0-A2 (7 pin raggruppati)
+ * - [WIRING] LED RGB: D6-D7-D8 (3 pin consecutivi invece di D6/D8/A3)
+ * - [WIRING] HC-SR04: A4-A5 (2 pin analogici consecutivi invece di A1/D9)
+ * - [WIRING] Sensori base: DHT=D2, BUZZER=D3, LDR=A3 (3 pin vicini)
+ * - [WIRING] SERVO: D9 (pin PWM isolato, spostato da D5)
+ * - [WIRING] LCD I2C: D14-D15 (pin hardware fissi, non modificati)
+ * - [BENEFIT] Cablaggio molto più semplice con pin raggruppati per funzione
  *
  * CHANGELOG v8.7:
  * - [PERFORMANCE] Ridotta frequenza campionamento HC-SR04: 100ms → 2s (20x meno frequente)
@@ -74,28 +84,42 @@
 #include "ble/GattServer.h"
 #include "TextLCD.h"
 
-// --- CONFIGURAZIONE PIN ---
-#define PIN_TRIG    A1
-#define PIN_ECHO    D9
-#define PIN_LDR     A2
-#define PIN_DHT     D4
-#define PIN_SERVO   D5
-#define PIN_BUZZER  D2
+// --- CONFIGURAZIONE PIN (OTTIMIZZATA PER RAGGRUPPAMENTO) ---
+// I pin sono raggruppati per device per semplificare il cablaggio
+
+// GRUPPO 1: LCD I2C (pin hardware fissi - non modificabili)
 #define PIN_LCD_SDA D14
 #define PIN_LCD_SCL D15
+
+// GRUPPO 2: TASTIERA 4x3 (7 pin ben raggruppati)
+#define PIN_ROW1    D10  // Righe: D10-D13 consecutivi
+#define PIN_ROW2    D11
+#define PIN_ROW3    D12
+#define PIN_ROW4    D13
+#define PIN_COL1    A0   // Colonne: A0-A2 consecutivi
+#define PIN_COL2    A1
+#define PIN_COL3    A2
+
+// GRUPPO 3: LED RGB (3 pin digitali consecutivi)
+#define PIN_LED_R   D6
+#define PIN_LED_G   D7
+#define PIN_LED_B   D8
+
+// GRUPPO 4: HC-SR04 SONAR (2 pin analogici consecutivi)
+#define PIN_TRIG    A4
+#define PIN_ECHO    A5
+
+// GRUPPO 5: SENSORI BASE (3 pin vicini)
+#define PIN_DHT     D2
+#define PIN_BUZZER  D3
+#define PIN_LDR     A3
+
+// GRUPPO 6: SERVO (pin PWM isolato)
+#define PIN_SERVO   D9
 
 // --- TASTIERA 4x3 (DISABILITATA) ---
 // Temporaneamente disabilitata fino al collegamento hardware
 #define KEYPAD_ENABLED 0
-
-// --- PIN TASTIERA 4x3 ---
-#define PIN_ROW1    D10
-#define PIN_ROW2    D11
-#define PIN_ROW3    D12
-#define PIN_ROW4    D13
-#define PIN_COL1    D3
-#define PIN_COL2    D7
-#define PIN_COL3    A0
 
 // --- PARAMETRI ---
 #define SOGLIA_LDR_SCATTO 25
@@ -153,9 +177,9 @@ DigitalIn col3(PIN_COL3, PullUp);
 #endif
 
 // --- LED RGB ---
-DigitalOut ledR(D6);
-DigitalOut ledG(D8);
-DigitalOut ledB(A3);
+DigitalOut ledR(PIN_LED_R);
+DigitalOut ledG(PIN_LED_G);
+DigitalOut ledB(PIN_LED_B);
 
 void setRGB(int r, int g, int b) {
     ledR = r; ledG = g; ledB = b;
@@ -985,7 +1009,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.7 OPTIM");
+    lcd.printf("BOOT v8.8 PINS");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
