@@ -559,6 +559,13 @@ void updateMachine() {
 
     int ldr_val = (int)(ldr.read() * 100);
 
+    // DEBUG LDR: Stampa valore ogni 10 cicli (ogni secondo circa)
+    static int ldr_debug_counter = 0;
+    if (++ldr_debug_counter >= 10) {
+        ldr_debug_counter = 0;
+        printf("[LDR DEBUG] Valore: %d%%  |  Soglia scatto: 25  |  Soglia reset: 15\n", ldr_val);
+    }
+
     // Leggi distanza solo ogni 2s (stesso rate dei sensori temp/hum)
     if (++counterDist >= 20) {
         counterDist = 0;
