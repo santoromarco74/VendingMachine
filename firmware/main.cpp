@@ -179,6 +179,7 @@ int ultimaDistanzaValida = 100;  // Valore iniziale default
 // --- DEBOUNCING TASTIERA ---
 char ultimoTasto = '\0';
 bool tastoInLettura = false;
+bool keypadTimerStarted = false;
 Timer keypadDebounceTimer;
 #define KEYPAD_DEBOUNCE_TIME_US 300000  // 300ms debounce
 
@@ -517,8 +518,10 @@ void updateMachine() {
     // TASTIERA 4x3 - Lettura e debouncing
     char tasto = scanKeypad();
     if (tasto != '\0' && !tastoInLettura) {
-        if (!keypadDebounceTimer.isStarted()) {
+        if (!keypadTimerStarted) {
+            keypadDebounceTimer.reset();
             keypadDebounceTimer.start();
+            keypadTimerStarted = true;
             ultimoTasto = tasto;
         }
 
@@ -601,14 +604,15 @@ void updateMachine() {
                 }
             }
 
-            keypadDebounceTimer.reset();
+            keypadDebounceTimer.stop();
+            keypadTimerStarted = false;
         }
     } else if (tasto == '\0') {
         // Nessun tasto premuto: reset debouncing
         tastoInLettura = false;
-        if (keypadDebounceTimer.isStarted()) {
+        if (keypadTimerStarted) {
             keypadDebounceTimer.stop();
-            keypadDebounceTimer.reset();
+            keypadTimerStarted = false;
         }
     }
 
