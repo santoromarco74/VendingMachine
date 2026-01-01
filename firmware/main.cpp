@@ -2,8 +2,17 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.5 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.6 CLEAN (Stock Management + LCD + Keypad)
  * ======================================================================================
+ *
+ * CHANGELOG v8.6:
+ * - [FEATURE] Tastiera a membrana 4x3: alternativa fisica all'app smartphone
+ * - [FEATURE] Tasti 1-4: selezione prodotti (ACQUA, SNACK, CAFFE, THE)
+ * - [FEATURE] Tasto '#': CONFERMA acquisto (equivalente comando BLE 10)
+ * - [FEATURE] Tasto '*': ANNULLA e resto (equivalente comando BLE 9)
+ * - [DEBOUNCING] 300ms per tastiera (stesso timing LDR per consistenza)
+ * - [HARDWARE] Pin: righe D10-D13, colonne D3/D7/A0, pull-up su colonne
+ * - [UX] Operazione completamente autonoma senza necessità smartphone
  *
  * CHANGELOG v8.5:
  * - [FIX] Filtro anti-spike per sensore HC-SR04 (elimina letture spurie 999cm)
@@ -67,6 +76,15 @@
 #define PIN_LCD_SDA D14
 #define PIN_LCD_SCL D15
 
+// --- PIN TASTIERA 4x3 ---
+#define PIN_ROW1    D10
+#define PIN_ROW2    D11
+#define PIN_ROW3    D12
+#define PIN_ROW4    D13
+#define PIN_COL1    D3
+#define PIN_COL2    D7
+#define PIN_COL3    A0
+
 // --- PARAMETRI ---
 #define SOGLIA_LDR_SCATTO 25
 #define SOGLIA_LDR_RESET  15
@@ -111,6 +129,15 @@ AnalogIn ldr(PIN_LDR);
 DigitalOut buzzer(PIN_BUZZER);
 DigitalIn tastoAnnulla(PC_13);
 
+// --- TASTIERA 4x3 ---
+DigitalOut row1(PIN_ROW1);
+DigitalOut row2(PIN_ROW2);
+DigitalOut row3(PIN_ROW3);
+DigitalOut row4(PIN_ROW4);
+DigitalIn col1(PIN_COL1, PullUp);
+DigitalIn col2(PIN_COL2, PullUp);
+DigitalIn col3(PIN_COL3, PullUp);
+
 // --- LED RGB ---
 DigitalOut ledR(D6);
 DigitalOut ledG(D8);
@@ -141,6 +168,12 @@ bool creditoResiduo = false;
 
 // Filtro distanza per gestire letture spurie 999cm
 int ultimaDistanzaValida = 100;  // Valore iniziale default
+
+// --- DEBOUNCING TASTIERA ---
+char ultimoTasto = '\0';
+bool tastoInLettura = false;
+Timer keypadDebounceTimer;
+#define KEYPAD_DEBOUNCE_TIME_US 300000  // 300ms debounce
 
 // --- GESTIONE SCORTE ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
@@ -315,6 +348,49 @@ static VendingGapEventHandler gap_handler;
 static VendingServerEventHandler server_handler;
 
 // ======================================================================================
+// TASTIERA 4x3 - SCAN MATRICE
+// ======================================================================================
+char scanKeypad() {
+    // Layout tastiera:
+    //   1   2   3   → Selezione prodotti
+    //   4   5   6   → THE + futuri
+    //   7   8   9   → Riservati
+    //   *   0   #   → ANNULLA, riservato, CONFERMA
+
+    const char keys[4][3] = {
+        {'1','2','3'},  // Row 1: ACQUA, SNACK, CAFFE
+        {'4','5','6'},  // Row 2: THE, futuro, futuro
+        {'7','8','9'},  // Row 3: riservati
+        {'*','0','#'}   // Row 4: ANNULLA, riservato, CONFERMA
+    };
+
+    DigitalOut* rows[] = {&row1, &row2, &row3, &row4};
+    DigitalIn* cols[] = {&col1, &col2, &col3};
+
+    // Inizializza tutte le righe HIGH
+    for(int i=0; i<4; i++) {
+        *rows[i] = 1;
+    }
+
+    // Scan matrice
+    for(int r=0; r<4; r++) {
+        *rows[r] = 0;  // Attiva riga (LOW)
+        wait_us(10);   // Stabilizza
+
+        for(int c=0; c<3; c++) {
+            if(*cols[c] == 0) {  // Colonna premuta (pull-up -> LOW quando premuto)
+                *rows[r] = 1;  // Disattiva riga
+                return keys[r][c];
+            }
+        }
+
+        *rows[r] = 1;  // Disattiva riga
+    }
+
+    return '\0';  // Nessun tasto premuto
+}
+
+// ======================================================================================
 // SENSORI
 // ======================================================================================
 void echoRise() { sonarTimer.reset(); sonarTimer.start(); }
@@ -423,6 +499,104 @@ void updateMachine() {
 
     int ldr_val = (int)(ldr.read() * 100);
     int dist = leggiDistanza();
+
+    // TASTIERA 4x3 - Lettura e debouncing
+    char tasto = scanKeypad();
+    if (tasto != '\0' && !tastoInLettura) {
+        if (!keypadDebounceTimer.isStarted()) {
+            keypadDebounceTimer.start();
+            ultimoTasto = tasto;
+        }
+
+        if (keypadDebounceTimer.elapsed_time().count() > KEYPAD_DEBOUNCE_TIME_US) {
+            tastoInLettura = true;
+            printf("[KEYPAD] Tasto premuto: %c\n", tasto);
+
+            // Gestione tasti in base allo stato
+            if (statoCorrente == RIPOSO || statoCorrente == ATTESA_MONETA) {
+                // Tasti selezione prodotti (1-4)
+                if (tasto == '1') {
+                    if (scorte[1] > 0) {
+                        idProdotto = 1;
+                        prezzoSelezionato = PREZZO_ACQUA;
+                        setRGB(0, 1, 1);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] ACQUA selezionata (scorte=%d)\n", scorte[1]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] ACQUA esaurita\n");
+                    }
+                }
+                else if (tasto == '2') {
+                    if (scorte[2] > 0) {
+                        idProdotto = 2;
+                        prezzoSelezionato = PREZZO_SNACK;
+                        setRGB(1, 0, 1);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] SNACK selezionato (scorte=%d)\n", scorte[2]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] SNACK esaurito\n");
+                    }
+                }
+                else if (tasto == '3') {
+                    if (scorte[3] > 0) {
+                        idProdotto = 3;
+                        prezzoSelezionato = PREZZO_CAFFE;
+                        setRGB(1, 1, 0);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] CAFFE selezionato (scorte=%d)\n", scorte[3]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] CAFFE esaurito\n");
+                    }
+                }
+                else if (tasto == '4') {
+                    if (scorte[4] > 0) {
+                        idProdotto = 4;
+                        prezzoSelezionato = PREZZO_THE;
+                        setRGB(0, 1, 0);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] THE selezionato (scorte=%d)\n", scorte[4]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] THE esaurito\n");
+                    }
+                }
+                // Tasto CONFERMA (#)
+                else if (tasto == '#' && statoCorrente == ATTESA_MONETA) {
+                    printf("[KEYPAD] CONFERMA: credito=%d, prezzo=%d\n", credito, prezzoSelezionato);
+                    if (credito >= prezzoSelezionato) {
+                        printf("[KEYPAD] Accettata: avvio erogazione\n");
+                        statoCorrente = EROGAZIONE;
+                        timerStato.reset();
+                        timerStato.start();
+                        if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                    } else {
+                        printf("[KEYPAD] Rifiutata: credito insufficiente\n");
+                    }
+                }
+                // Tasto ANNULLA (*)
+                else if (tasto == '*' && statoCorrente == ATTESA_MONETA && credito > 0) {
+                    printf("[KEYPAD] ANNULLA - Resto: %dE\n", credito);
+                    setRGB(1, 0, 1);
+                    statoCorrente = RESTO;
+                    timerStato.reset();
+                    timerStato.start();
+                    if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                }
+            }
+
+            keypadDebounceTimer.reset();
+        }
+    } else if (tasto == '\0') {
+        // Nessun tasto premuto: reset debouncing
+        tastoInLettura = false;
+        if (keypadDebounceTimer.isStarted()) {
+            keypadDebounceTimer.stop();
+            keypadDebounceTimer.reset();
+        }
+    }
 
     // Aggiorna sensori ogni 2s
     if (++counterTemp > 20) {
@@ -780,7 +954,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.5 CLEAN");
+    lcd.printf("BOOT v8.6 KEYPAD");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
