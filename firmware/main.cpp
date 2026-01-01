@@ -6,11 +6,12 @@
  * ======================================================================================
  *
  * CHANGELOG v8.7:
- * - [PERFORMANCE] Ridotta frequenza campionamento HC-SR04: 100ms → 500ms (5x meno frequente)
+ * - [PERFORMANCE] Ridotta frequenza campionamento HC-SR04: 100ms → 2s (20x meno frequente)
  * - [PERFORMANCE] Ridotti campioni per lettura: 5 → 3 (overhead: 75ms → 45ms)
  * - [PERFORMANCE] Cache distanza tra letture (riduce CPU usage)
- * - [FIX] Drastica riduzione timeout sonar e log spam
- * - [STABILITY] Sensore distanza più stabile con overhead minimo
+ * - [FIX] Rimossi log debug verbosi dal sonar (eliminato spam console)
+ * - [STABILITY] Sensore distanza campiona come temp/hum (ogni 2s)
+ * - [STABILITY] Tastiera disabilitata fino a collegamento hardware (KEYPAD_ENABLED=0)
  *
  * CHANGELOG v8.6:
  * - [FEATURE] Tastiera a membrana 4x3: alternativa fisica all'app smartphone
@@ -438,7 +439,7 @@ int leggiDistanza() {
 
     if (validi == 0) {
         // Nessuna lettura valida: usa ultima distanza valida con decadimento lento
-        printf("[SONAR] Timeout completo, uso ultima valida: %dcm\n", ultimaDistanzaValida);
+        // DEBUG: printf("[SONAR] Timeout completo, uso ultima valida: %dcm\n", ultimaDistanzaValida);
         return ultimaDistanzaValida;
     }
 
@@ -446,7 +447,7 @@ int leggiDistanza() {
 
     // Filtro anti-spike: se la differenza è > 100cm, probabilmente è rumore
     if (abs(media - ultimaDistanzaValida) > 100 && ultimaDistanzaValida < 400) {
-        printf("[SONAR] Spike rilevato %d->%d, mantengo precedente\n", ultimaDistanzaValida, media);
+        // DEBUG: printf("[SONAR] Spike rilevato %d->%d, mantengo precedente\n", ultimaDistanzaValida, media);
         return ultimaDistanzaValida;
     }
 
@@ -519,8 +520,8 @@ void updateMachine() {
 
     int ldr_val = (int)(ldr.read() * 100);
 
-    // Leggi distanza solo ogni 500ms invece di ogni 100ms (riduce overhead)
-    if (++counterDist >= 5) {
+    // Leggi distanza solo ogni 2s (stesso rate dei sensori temp/hum)
+    if (++counterDist >= 20) {
         counterDist = 0;
         dist = leggiDistanza();
     }
