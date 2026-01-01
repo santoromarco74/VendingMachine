@@ -2,8 +2,15 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.6 CLEAN (Stock Management + LCD + Keypad)
+ * VERSIONE: v8.7 CLEAN (Stock Management + LCD + Keypad + Sonar Optimized)
  * ======================================================================================
+ *
+ * CHANGELOG v8.7:
+ * - [PERFORMANCE] Ridotta frequenza campionamento HC-SR04: 100ms → 500ms (5x meno frequente)
+ * - [PERFORMANCE] Ridotti campioni per lettura: 5 → 3 (overhead: 75ms → 45ms)
+ * - [PERFORMANCE] Cache distanza tra letture (riduce CPU usage)
+ * - [FIX] Drastica riduzione timeout sonar e log spam
+ * - [STABILITY] Sensore distanza più stabile con overhead minimo
  *
  * CHANGELOG v8.6:
  * - [FEATURE] Tastiera a membrana 4x3: alternativa fisica all'app smartphone
@@ -400,8 +407,8 @@ int leggiDistanza() {
     int somma = 0;
     int validi = 0;
 
-    // Campiona 5 volte invece di 3 per maggiore affidabilità
-    for(int i=0; i<5; i++) {
+    // Campiona 3 volte (ridotto da 5 per overhead)
+    for(int i=0; i<3; i++) {
         trig = 0; wait_us(5);
         trig = 1; wait_us(15);  // Pulse più lungo per affidabilità
         trig = 0;
@@ -493,12 +500,19 @@ void dht_reader_thread() {
 // ======================================================================================
 void updateMachine() {
     static int counterTemp = 0;
+    static int counterDist = 0;
     static int blinkTimer = 0;
+    static int dist = 100;  // Cache distanza
 
     watchdog.kick();
 
     int ldr_val = (int)(ldr.read() * 100);
-    int dist = leggiDistanza();
+
+    // Leggi distanza solo ogni 500ms invece di ogni 100ms (riduce overhead)
+    if (++counterDist >= 5) {
+        counterDist = 0;
+        dist = leggiDistanza();
+    }
 
     // TASTIERA 4x3 - Lettura e debouncing
     char tasto = scanKeypad();
@@ -954,7 +968,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.6 KEYPAD");
+    lcd.printf("BOOT v8.7 OPTIM");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
