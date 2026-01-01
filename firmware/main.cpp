@@ -83,6 +83,10 @@
 #define PIN_LCD_SDA D14
 #define PIN_LCD_SCL D15
 
+// --- TASTIERA 4x3 (DISABILITATA) ---
+// Temporaneamente disabilitata fino al collegamento hardware
+#define KEYPAD_ENABLED 0
+
 // --- PIN TASTIERA 4x3 ---
 #define PIN_ROW1    D10
 #define PIN_ROW2    D11
@@ -136,6 +140,7 @@ AnalogIn ldr(PIN_LDR);
 DigitalOut buzzer(PIN_BUZZER);
 DigitalIn tastoAnnulla(PC_13);
 
+#if KEYPAD_ENABLED
 // --- TASTIERA 4x3 ---
 DigitalOut row1(PIN_ROW1);
 DigitalOut row2(PIN_ROW2);
@@ -144,6 +149,7 @@ DigitalOut row4(PIN_ROW4);
 DigitalIn col1(PIN_COL1, PullUp);
 DigitalIn col2(PIN_COL2, PullUp);
 DigitalIn col3(PIN_COL3, PullUp);
+#endif
 
 // --- LED RGB ---
 DigitalOut ledR(D6);
@@ -176,12 +182,14 @@ bool creditoResiduo = false;
 // Filtro distanza per gestire letture spurie 999cm
 int ultimaDistanzaValida = 100;  // Valore iniziale default
 
+#if KEYPAD_ENABLED
 // --- DEBOUNCING TASTIERA ---
 char ultimoTasto = '\0';
 bool tastoInLettura = false;
 bool keypadTimerStarted = false;
 Timer keypadDebounceTimer;
 #define KEYPAD_DEBOUNCE_TIME_US 300000  // 300ms debounce
+#endif
 
 // --- GESTIONE SCORTE ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
@@ -355,6 +363,7 @@ public:
 static VendingGapEventHandler gap_handler;
 static VendingServerEventHandler server_handler;
 
+#if KEYPAD_ENABLED
 // ======================================================================================
 // TASTIERA 4x3 - SCAN MATRICE
 // ======================================================================================
@@ -397,6 +406,7 @@ char scanKeypad() {
 
     return '\0';  // Nessun tasto premuto
 }
+#endif
 
 // ======================================================================================
 // SENSORI
@@ -515,6 +525,7 @@ void updateMachine() {
         dist = leggiDistanza();
     }
 
+#if KEYPAD_ENABLED
     // TASTIERA 4x3 - Lettura e debouncing
     char tasto = scanKeypad();
     if (tasto != '\0' && !tastoInLettura) {
@@ -615,6 +626,7 @@ void updateMachine() {
             keypadTimerStarted = false;
         }
     }
+#endif
 
     // Aggiorna sensori ogni 2s
     if (++counterTemp > 20) {
