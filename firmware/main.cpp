@@ -2,8 +2,21 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.8 CLEAN (Pin Optimization + Performance)
+ * VERSIONE: v8.9 CLEAN (Keypad 4x4 + Pin Optimization)
  * ======================================================================================
+ *
+ * CHANGELOG v8.9:
+ * - [HARDWARE] Correzione tastiera: 4x4 (8 pin) invece di 4x3 (7 pin)
+ * - [WIRING] Tastiera 4x4: righe D10-13, colonne D2-D5 (8 pin ben raggruppati)
+ * - [WIRING] LED RGB: D6-D7-D8 (3 pin consecutivi)
+ * - [WIRING] HC-SR04: A1-A2 (TRIG/ECHO consecutivi)
+ * - [WIRING] Sensori base: LDR=A0, DHT=A3, BUZZER=A4
+ * - [WIRING] SERVO: D9 (pin PWM isolato)
+ * - [WIRING] LCD I2C: D14-D15 (pin hardware fissi)
+ * - [KEYPAD] Layout 4x4 standard: tasti 1-9, A-D, *, 0, #
+ * - [KEYPAD] Tasto 'A': ANNULLA (invece di '*')
+ * - [KEYPAD] Tasto 'D': CONFERMA (invece di '#')
+ * - [BENEFIT] Cablaggio semplificato con 8 pin tastiera quasi tutti consecutivi
  *
  * CHANGELOG v8.8:
  * - [HARDWARE] Riorganizzazione pin per raggruppamento per device
@@ -91,33 +104,34 @@
 #define PIN_LCD_SDA D14
 #define PIN_LCD_SCL D15
 
-// GRUPPO 2: TASTIERA 4x3 (7 pin ben raggruppati)
-#define PIN_ROW1    D10  // Righe: D10-D13 consecutivi
+// GRUPPO 2: TASTIERA 4x4 (8 pin ben raggruppati)
+#define PIN_ROW1    D10  // Righe: D10-D13 consecutivi (4 pin)
 #define PIN_ROW2    D11
 #define PIN_ROW3    D12
 #define PIN_ROW4    D13
-#define PIN_COL1    A0   // Colonne: A0-A2 consecutivi
-#define PIN_COL2    A1
-#define PIN_COL3    A2
+#define PIN_COL1    D2   // Colonne: D2-D5 consecutivi (4 pin)
+#define PIN_COL2    D3
+#define PIN_COL3    D4
+#define PIN_COL4    D5
 
 // GRUPPO 3: LED RGB (3 pin digitali consecutivi)
 #define PIN_LED_R   D6
 #define PIN_LED_G   D7
 #define PIN_LED_B   D8
 
-// GRUPPO 4: HC-SR04 SONAR (2 pin analogici consecutivi)
-#define PIN_TRIG    A4
-#define PIN_ECHO    A5
+// GRUPPO 4: HC-SR04 SONAR (2 pin consecutivi)
+#define PIN_TRIG    A1
+#define PIN_ECHO    A2
 
-// GRUPPO 5: SENSORI BASE (3 pin vicini)
-#define PIN_DHT     D2
-#define PIN_BUZZER  D3
-#define PIN_LDR     A3
+// GRUPPO 5: SENSORI BASE (3 pin)
+#define PIN_LDR     A0   // AnalogIn (DEVE essere su pin Ax)
+#define PIN_DHT     A3
+#define PIN_BUZZER  A4
 
 // GRUPPO 6: SERVO (pin PWM isolato)
 #define PIN_SERVO   D9
 
-// --- TASTIERA 4x3 (DISABILITATA) ---
+// --- TASTIERA 4x4 (DISABILITATA) ---
 // Temporaneamente disabilitata fino al collegamento hardware
 #define KEYPAD_ENABLED 0
 
@@ -166,7 +180,7 @@ DigitalOut buzzer(PIN_BUZZER);
 DigitalIn tastoAnnulla(PC_13);
 
 #if KEYPAD_ENABLED
-// --- TASTIERA 4x3 ---
+// --- TASTIERA 4x4 ---
 DigitalOut row1(PIN_ROW1);
 DigitalOut row2(PIN_ROW2);
 DigitalOut row3(PIN_ROW3);
@@ -174,6 +188,7 @@ DigitalOut row4(PIN_ROW4);
 DigitalIn col1(PIN_COL1, PullUp);
 DigitalIn col2(PIN_COL2, PullUp);
 DigitalIn col3(PIN_COL3, PullUp);
+DigitalIn col4(PIN_COL4, PullUp);
 #endif
 
 // --- LED RGB ---
@@ -390,24 +405,24 @@ static VendingServerEventHandler server_handler;
 
 #if KEYPAD_ENABLED
 // ======================================================================================
-// TASTIERA 4x3 - SCAN MATRICE
+// TASTIERA 4x4 - SCAN MATRICE
 // ======================================================================================
 char scanKeypad() {
-    // Layout tastiera:
-    //   1   2   3   → Selezione prodotti
-    //   4   5   6   → THE + futuri
-    //   7   8   9   → Riservati
-    //   *   0   #   → ANNULLA, riservato, CONFERMA
+    // Layout tastiera 4x4 standard:
+    //   1   2   3   A   → Selezione prodotti + ANNULLA
+    //   4   5   6   B   → THE + riservati
+    //   7   8   9   C   → Riservati
+    //   *   0   #   D   → Riservati + CONFERMA
 
-    const char keys[4][3] = {
-        {'1','2','3'},  // Row 1: ACQUA, SNACK, CAFFE
-        {'4','5','6'},  // Row 2: THE, futuro, futuro
-        {'7','8','9'},  // Row 3: riservati
-        {'*','0','#'}   // Row 4: ANNULLA, riservato, CONFERMA
+    const char keys[4][4] = {
+        {'1','2','3','A'},  // Row 1: ACQUA, SNACK, CAFFE, ANNULLA
+        {'4','5','6','B'},  // Row 2: THE, futuro, futuro, riservato
+        {'7','8','9','C'},  // Row 3: riservati
+        {'*','0','#','D'}   // Row 4: riservati, riservato, riservato, CONFERMA
     };
 
     DigitalOut* rows[] = {&row1, &row2, &row3, &row4};
-    DigitalIn* cols[] = {&col1, &col2, &col3};
+    DigitalIn* cols[] = {&col1, &col2, &col3, &col4};
 
     // Inizializza tutte le righe HIGH
     for(int i=0; i<4; i++) {
@@ -419,7 +434,7 @@ char scanKeypad() {
         *rows[r] = 0;  // Attiva riga (LOW)
         wait_us(10);   // Stabilizza
 
-        for(int c=0; c<3; c++) {
+        for(int c=0; c<4; c++) {
             if(*cols[c] == 0) {  // Colonna premuta (pull-up -> LOW quando premuto)
                 *rows[r] = 1;  // Disattiva riga
                 return keys[r][c];
@@ -616,8 +631,8 @@ void updateMachine() {
                         printf("[KEYPAD] THE esaurito\n");
                     }
                 }
-                // Tasto CONFERMA (#)
-                else if (tasto == '#' && statoCorrente == ATTESA_MONETA) {
+                // Tasto CONFERMA (D)
+                else if (tasto == 'D' && statoCorrente == ATTESA_MONETA) {
                     printf("[KEYPAD] CONFERMA: credito=%d, prezzo=%d\n", credito, prezzoSelezionato);
                     if (credito >= prezzoSelezionato) {
                         printf("[KEYPAD] Accettata: avvio erogazione\n");
@@ -629,8 +644,8 @@ void updateMachine() {
                         printf("[KEYPAD] Rifiutata: credito insufficiente\n");
                     }
                 }
-                // Tasto ANNULLA (*)
-                else if (tasto == '*' && statoCorrente == ATTESA_MONETA && credito > 0) {
+                // Tasto ANNULLA (A)
+                else if (tasto == 'A' && statoCorrente == ATTESA_MONETA && credito > 0) {
                     printf("[KEYPAD] ANNULLA - Resto: %dE\n", credito);
                     setRGB(1, 0, 1);
                     statoCorrente = RESTO;
@@ -1009,7 +1024,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.8 PINS");
+    lcd.printf("BOOT v8.9 KP4x4");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;

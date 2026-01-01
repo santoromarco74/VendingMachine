@@ -1,7 +1,7 @@
 # VendingMonitor - Mappa Pin Ottimizzata
 
 **Target:** STM32 Nucleo F401RE
-**Versione Firmware:** v8.8+
+**Versione Firmware:** v8.9+
 **Data:** 2025-01-01
 
 ---
@@ -21,7 +21,7 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 
 ---
 
-### **GRUPPO 2: Tastiera a Membrana 4x3 (7 pin raggruppati)**
+### **GRUPPO 2: Tastiera a Membrana 4x4 (8 pin ben raggruppati)**
 
 #### Righe (4 pin digitali consecutivi)
 | Riga | Pin Nucleo | Configurazione |
@@ -31,25 +31,32 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 | ROW 3 | **D12** | DigitalOut |
 | ROW 4 | **D13** | DigitalOut |
 
-#### Colonne (3 pin analogici consecutivi)
+#### Colonne (4 pin digitali consecutivi)
 | Colonna | Pin Nucleo | Configurazione |
 |---------|-----------|----------------|
-| COL 1 | **A0** | DigitalIn con PullUp |
-| COL 2 | **A1** | DigitalIn con PullUp |
-| COL 3 | **A2** | DigitalIn con PullUp |
+| COL 1 | **D2** | DigitalIn con PullUp |
+| COL 2 | **D3** | DigitalIn con PullUp |
+| COL 3 | **D4** | DigitalIn con PullUp |
+| COL 4 | **D5** | DigitalIn con PullUp |
 
-**Layout Tastiera:**
+**Layout Tastiera 4x4 Standard:**
 ```
-┌─────┬─────┬─────┐
-│  1  │  2  │  3  │  ← Selezione prodotti
-├─────┼─────┼─────┤
-│  4  │  5  │  6  │  ← THE + futuri
-├─────┼─────┼─────┤
-│  7  │  8  │  9  │  ← Riservati
-├─────┼─────┼─────┤
-│  *  │  0  │  #  │  ← ANNULLA | riservato | CONFERMA
-└─────┴─────┴─────┘
+┌─────┬─────┬─────┬─────┐
+│  1  │  2  │  3  │  A  │  ← Selezione prodotti + ANNULLA
+├─────┼─────┼─────┼─────┤
+│  4  │  5  │  6  │  B  │  ← THE + riservati
+├─────┼─────┼─────┼─────┤
+│  7  │  8  │  9  │  C  │  ← Riservati
+├─────┼─────┼─────┼─────┤
+│  *  │  0  │  #  │  D  │  ← Riservati + CONFERMA
+└─────┴─────┴─────┴─────┘
 ```
+
+**Mappatura Tasti:**
+- **1-4**: Selezione prodotti (ACQUA, SNACK, CAFFE, THE)
+- **A**: ANNULLA e resto
+- **D**: CONFERMA acquisto
+- **5-9, B, C, *, 0, #**: Riservati per funzioni future
 
 **Stato:** `KEYPAD_ENABLED 0` (disabilitato fino al collegamento hardware)
 
@@ -66,11 +73,11 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 
 ---
 
-### **GRUPPO 4: HC-SR04 Sensore Ultrasuoni (2 pin analogici consecutivi)**
+### **GRUPPO 4: HC-SR04 Sensore Ultrasuoni (2 pin consecutivi)**
 | Funzione | Pin Nucleo | Tipo |
 |----------|-----------|------|
-| TRIG | **A4** | DigitalOut |
-| ECHO | **A5** | InterruptIn |
+| TRIG | **A1** | DigitalOut |
+| ECHO | **A2** | InterruptIn |
 
 **Range:** 2-400 cm
 **Campionamento:** Ogni 2 secondi (ridotto overhead)
@@ -78,12 +85,12 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 
 ---
 
-### **GRUPPO 5: Sensori Base (3 pin vicini)**
+### **GRUPPO 5: Sensori Base (3 pin)**
 | Sensore | Pin Nucleo | Tipo | Note |
 |---------|-----------|------|------|
-| DHT11 | **D2** | DigitalInOut | Temp + Umidità |
-| BUZZER | **D3** | DigitalOut | Feedback audio |
-| LDR | **A3** | AnalogIn | Rilevamento monete |
+| LDR | **A0** | AnalogIn | Rilevamento monete (DEVE essere su pin Ax) |
+| DHT11 | **A3** | DigitalInOut | Temp + Umidità |
+| BUZZER | **A4** | DigitalOut | Feedback audio |
 
 **DHT11:** Thread separato, lettura ogni 2s
 **LDR:** Debouncing 300ms, 5 campioni consecutivi
@@ -111,25 +118,37 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 
 ---
 
-## 🔄 Modifiche da v8.7 → v8.8
+## 🔄 Modifiche da v8.8 → v8.9
+
+### Cambiamenti Principali:
+- **Tastiera**: Corretta da 4x3 (7 pin) a 4x4 (8 pin)
+- **Colonne tastiera**: Spostate da pin analogici (A0-A2) a pin digitali (D2-D5)
+- **Sensori base**: Riorganizzati per liberare pin digitali per tastiera
 
 ### Pin Spostati:
-| Device | Vecchio | Nuovo | Motivo |
-|--------|---------|-------|--------|
-| Tastiera COL2 | D7 | **A1** | Colonne consecutive A0-A2 |
-| Tastiera COL3 | A0 | **A2** | Colonne consecutive A0-A2 |
-| LED Green | D8 | **D7** | LED RGB consecutivi D6-D8 |
-| LED Blue | A3 | **D8** | LED RGB consecutivi D6-D8 |
-| Sonar TRIG | A1 | **A4** | Sonar consecutivo A4-A5 |
-| Sonar ECHO | D9 | **A5** | Sonar consecutivo A4-A5 |
-| DHT11 | D4 | **D2** | Sensori base vicini |
-| BUZZER | D2 | **D3** | Sensori base vicini |
-| LDR | A2 | **A3** | Sensori base vicini |
-| SERVO | D5 | **D9** | Pin PWM disponibile |
+| Device | v8.8 | v8.9 | Motivo |
+|--------|------|------|--------|
+| Tastiera COL1 | A0 | **D2** | Tastiera 4x4: 4 colonne su pin digitali |
+| Tastiera COL2 | A1 | **D3** | Tastiera 4x4: colonne consecutive D2-D5 |
+| Tastiera COL3 | A2 | **D4** | Tastiera 4x4: colonne consecutive D2-D5 |
+| Tastiera COL4 | - | **D5** | **NUOVA**: quarta colonna per tastiera 4x4 |
+| Sonar TRIG | A4 | **A1** | Liberato spazio per tastiera |
+| Sonar ECHO | A5 | **A2** | Sonar rimane consecutivo |
+| LDR | A3 | **A0** | LDR DEVE essere su pin analogico |
+| DHT11 | D2 | **A3** | Liberato D2 per tastiera |
+| BUZZER | D3 | **A4** | Liberato D3 per tastiera |
+
+### Tasti Funzionali Cambiati:
+| Funzione | v8.8 | v8.9 |
+|----------|------|------|
+| ANNULLA | * | **A** |
+| CONFERMA | # | **D** |
 
 ### Pin Invariati:
-- **D14, D15** (LCD I2C - pin hardware fissi)
+- **D6, D7, D8** (LED RGB)
+- **D9** (SERVO)
 - **D10, D11, D12, D13** (Tastiera righe)
+- **D14, D15** (LCD I2C - pin hardware fissi)
 - **PC_13** (Pulsante USER)
 
 ---
@@ -137,17 +156,17 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 ## 📊 Riepilogo Utilizzo Pin
 
 ### Pin Digitali:
-- **D2:** DHT11
-- **D3:** BUZZER
+- **D2-D5:** Tastiera colonne (4 pin)
 - **D6-D8:** LED RGB (R, G, B)
 - **D9:** SERVO
 - **D10-D13:** Tastiera righe (4 pin)
 - **D14-D15:** LCD I2C (SDA, SCL)
 
 ### Pin Analogici:
-- **A0-A2:** Tastiera colonne (3 pin)
-- **A3:** LDR
-- **A4-A5:** HC-SR04 (TRIG, ECHO)
+- **A0:** LDR
+- **A1-A2:** HC-SR04 (TRIG, ECHO)
+- **A3:** DHT11
+- **A4:** BUZZER
 
 ### Pin Speciali:
 - **PC_13:** Pulsante USER (ANNULLA)
@@ -157,10 +176,10 @@ I pin sono organizzati per **device** per semplificare il cablaggio e ridurre er
 ## ⚡ Vantaggi Ottimizzazione
 
 ### ✅ Cablaggio Semplificato
-- **Tastiera:** 7 pin quasi tutti contigui (D10-13 + A0-2)
+- **Tastiera 4x4:** 8 pin ben raggruppati (D2-5 + D10-13, solo 2 cavi ribbon)
 - **LED RGB:** 3 pin consecutivi (D6-7-8)
-- **Sonar:** 2 pin consecutivi (A4-5)
-- **Sensori:** 3 pin vicini (D2-3, A3)
+- **Sonar:** 2 pin consecutivi (A1-2)
+- **Sensori:** Pin analogici disponibili ben distribuiti
 
 ### ✅ Riduzione Errori
 - Facile identificare gruppi di cavi per device
@@ -230,15 +249,18 @@ STM32 Nucleo F401RE
 
 ## 🔧 Checklist Pre-Test
 
-- [ ] Verificato tutti i 7 pin della tastiera (righe + colonne)
-- [ ] Collegato GND del LED RGB (⚠️ CRITICO)
-- [ ] Verificato alimentazione 5V per HC-SR04
-- [ ] Verificato partitore resistivo LDR (10kΩ consigliato)
+- [ ] Verificato tutti gli **8 pin della tastiera 4x4** (4 righe D10-13 + 4 colonne D2-5)
+- [ ] Collegato GND del LED RGB (⚠️ CRITICO - prevenzione ground bounce)
+- [ ] Verificato alimentazione 5V per HC-SR04 (TRIG=A1, ECHO=A2)
+- [ ] Verificato partitore resistivo LDR su A0 (10kΩ consigliato)
 - [ ] Collegato alimentazione separata SERVO (5V esterno se >4 prodotti)
 - [ ] Verificato indirizzo I2C LCD (0x4E o 0x27)
-- [ ] Impostato `KEYPAD_ENABLED 1` se tastiera collegata
+- [ ] Verificato DHT11 su A3 (può funzionare 3.3V-5V)
+- [ ] Verificato BUZZER su A4
+- [ ] Impostato `KEYPAD_ENABLED 1` se tastiera 4x4 collegata
+- [ ] Testato tasti A (ANNULLA) e D (CONFERMA)
 
 ---
 
-**Documento generato automaticamente da v8.8**
+**Documento generato automaticamente da v8.9**
 **Ultimo aggiornamento:** 2025-01-01
