@@ -2,8 +2,17 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.4 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.5 CLEAN (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.5:
+ * - [FIX] Filtro anti-spike per sensore HC-SR04 (elimina letture spurie 999cm)
+ * - [FIX] Aumentato timeout echo: 30ms → 50ms (più tollerante a interferenze)
+ * - [FIX] Campionamento: 3 → 5 letture per maggiore affidabilità
+ * - [FIX] Filtro range valido: 2-400cm (ignora valori fuori range)
+ * - [FIX] Anti-spike filter: ignora salti > 100cm (interferenze servo/buzzer)
+ * - [FIX] Memoria ultima distanza valida: se timeout usa valore precedente
+ * - [STABILITY] Echo timing migliorato: trig 15μs, wait 15ms tra campioni
  *
  * CHANGELOG v8.4:
  * - [UX MAJOR] Rimossa erogazione automatica: richiede SEMPRE conferma esplicita
@@ -129,6 +138,9 @@ int contatorePresenza = 0;
 int contatoreAssenza = 0;
 int ldrSampleCount = 0;
 bool creditoResiduo = false;
+
+// Filtro distanza per gestire letture spurie 999cm
+int ultimaDistanzaValida = 100;  // Valore iniziale default
 
 // --- GESTIONE SCORTE ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
@@ -311,16 +323,42 @@ void echoFall() { sonarTimer.stop(); echoDuration = sonarTimer.elapsed_time().co
 int leggiDistanza() {
     int somma = 0;
     int validi = 0;
-    for(int i=0; i<3; i++) {
-        trig = 0; wait_us(2);
-        trig = 1; wait_us(10);
-        trig = 0; wait_us(10000);
-        if (echoDuration > 0 && echoDuration < 30000) {
-            somma += (int)(echoDuration * 0.0343f / 2.0f);
-            validi++;
+
+    // Campiona 5 volte invece di 3 per maggiore affidabilità
+    for(int i=0; i<5; i++) {
+        trig = 0; wait_us(5);
+        trig = 1; wait_us(15);  // Pulse più lungo per affidabilità
+        trig = 0;
+        wait_us(15000);  // Timeout aumentato a 15ms (circa 250cm max)
+
+        // Timeout aumentato a 50000μs (circa 850cm max, più tollerante)
+        if (echoDuration > 0 && echoDuration < 50000) {
+            int distanza = (int)(echoDuration * 0.0343f / 2.0f);
+            // Filtro range valido: ignora letture < 2cm o > 400cm
+            if (distanza >= 2 && distanza <= 400) {
+                somma += distanza;
+                validi++;
+            }
         }
     }
-    return (validi == 0) ? 999 : somma / validi;
+
+    if (validi == 0) {
+        // Nessuna lettura valida: usa ultima distanza valida con decadimento lento
+        printf("[SONAR] Timeout completo, uso ultima valida: %dcm\n", ultimaDistanzaValida);
+        return ultimaDistanzaValida;
+    }
+
+    int media = somma / validi;
+
+    // Filtro anti-spike: se la differenza è > 100cm, probabilmente è rumore
+    if (abs(media - ultimaDistanzaValida) > 100 && ultimaDistanzaValida < 400) {
+        printf("[SONAR] Spike rilevato %d->%d, mantengo precedente\n", ultimaDistanzaValida, media);
+        return ultimaDistanzaValida;
+    }
+
+    // Aggiorna ultima distanza valida
+    ultimaDistanzaValida = media;
+    return media;
 }
 
 // ======================================================================================
@@ -742,7 +780,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.4 CLEAN");
+    lcd.printf("BOOT v8.5 CLEAN");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
