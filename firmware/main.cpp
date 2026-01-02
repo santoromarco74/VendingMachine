@@ -63,15 +63,43 @@
 #include "ble/GattServer.h"
 #include "TextLCD.h"
 
-// --- CONFIGURAZIONE PIN ---
-#define PIN_TRIG    A1
-#define PIN_ECHO    D9
-#define PIN_LDR     A2
-#define PIN_DHT     D4
-#define PIN_SERVO   D5
-#define PIN_BUZZER  D2
+// --- CONFIGURAZIONE PIN (OTTIMIZZATA PER RAGGRUPPAMENTO) ---
+// I pin sono raggruppati per device per semplificare il cablaggio
+
+// GRUPPO 1: LCD I2C (pin hardware fissi - non modificabili)
 #define PIN_LCD_SDA D14
 #define PIN_LCD_SCL D15
+
+// GRUPPO 2: TASTIERA 4x4 (8 pin ben raggruppati)
+#define PIN_ROW1    D10  // Righe: D10-D13 consecutivi (4 pin)
+#define PIN_ROW2    D11
+#define PIN_ROW3    D12
+#define PIN_ROW4    D13
+#define PIN_COL1    D2   // Colonne: D2-D5 consecutivi (4 pin)
+#define PIN_COL2    D3
+#define PIN_COL3    D4
+#define PIN_COL4    D5
+
+// GRUPPO 3: LED RGB (3 pin digitali consecutivi)
+#define PIN_LED_R   D6
+#define PIN_LED_G   D7
+#define PIN_LED_B   D8
+
+// GRUPPO 4: HC-SR04 SONAR (2 pin consecutivi)
+#define PIN_TRIG    A1
+#define PIN_ECHO    A2
+
+// GRUPPO 5: SENSORI BASE (3 pin)
+#define PIN_LDR     A0   // AnalogIn (DEVE essere su pin Ax)
+#define PIN_DHT     A3
+#define PIN_BUZZER  A4
+
+// GRUPPO 6: SERVO (pin PWM isolato)
+#define PIN_SERVO   D9
+
+// --- TASTIERA 4x4 (DISABILITATA) ---
+// Temporaneamente disabilitata fino al collegamento hardware
+#define KEYPAD_ENABLED 0
 
 // --- PARAMETRI ---
 #define SOGLIA_LDR_SCATTO 25
@@ -117,10 +145,22 @@ AnalogIn ldr(PIN_LDR);
 DigitalOut buzzer(PIN_BUZZER);
 DigitalIn tastoAnnulla(PC_13);
 
+#if KEYPAD_ENABLED
+// --- TASTIERA 4x4 ---
+DigitalOut row1(PIN_ROW1);
+DigitalOut row2(PIN_ROW2);
+DigitalOut row3(PIN_ROW3);
+DigitalOut row4(PIN_ROW4);
+DigitalIn col1(PIN_COL1, PullUp);
+DigitalIn col2(PIN_COL2, PullUp);
+DigitalIn col3(PIN_COL3, PullUp);
+DigitalIn col4(PIN_COL4, PullUp);
+#endif
+
 // --- LED RGB ---
-DigitalOut ledR(D6);
-DigitalOut ledG(D8);
-DigitalOut ledB(A3);
+DigitalOut ledR(PIN_LED_R);
+DigitalOut ledG(PIN_LED_G);
+DigitalOut ledB(PIN_LED_B);
 
 void setRGB(int r, int g, int b) {
     ledR = r; ledG = g; ledB = b;
@@ -147,6 +187,15 @@ bool creditoResiduo = false;
 
 // Filtro distanza per gestire letture spurie 999cm
 int ultimaDistanzaValida = 100;  // Valore iniziale default
+
+#if KEYPAD_ENABLED
+// --- DEBOUNCING TASTIERA ---
+char ultimoTasto = '\0';
+bool tastoInLettura = false;
+bool keypadTimerStarted = false;
+Timer keypadDebounceTimer;
+#define KEYPAD_DEBOUNCE_TIME_US 300000  // 300ms debounce
+#endif
 
 // --- GESTIONE SCORTE ---
 int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
@@ -320,6 +369,51 @@ public:
 static VendingGapEventHandler gap_handler;
 static VendingServerEventHandler server_handler;
 
+#if KEYPAD_ENABLED
+// ======================================================================================
+// TASTIERA 4x4 - SCAN MATRICE
+// ======================================================================================
+char scanKeypad() {
+    // Layout tastiera 4x4 standard:
+    //   1   2   3   A   → Selezione prodotti + ANNULLA
+    //   4   5   6   B   → THE + riservati
+    //   7   8   9   C   → Riservati
+    //   *   0   #   D   → Riservati + CONFERMA
+
+    const char keys[4][4] = {
+        {'1','2','3','A'},  // Row 1: ACQUA, SNACK, CAFFE, ANNULLA
+        {'4','5','6','B'},  // Row 2: THE, futuro, futuro, riservato
+        {'7','8','9','C'},  // Row 3: riservati
+        {'*','0','#','D'}   // Row 4: riservati, riservato, riservato, CONFERMA
+    };
+
+    DigitalOut* rows[] = {&row1, &row2, &row3, &row4};
+    DigitalIn* cols[] = {&col1, &col2, &col3, &col4};
+
+    // Inizializza tutte le righe HIGH
+    for(int i=0; i<4; i++) {
+        *rows[i] = 1;
+    }
+
+    // Scan matrice
+    for(int r=0; r<4; r++) {
+        *rows[r] = 0;  // Attiva riga (LOW)
+        wait_us(10);   // Stabilizza
+
+        for(int c=0; c<4; c++) {
+            if(*cols[c] == 0) {  // Colonna premuta (pull-up -> LOW quando premuto)
+                *rows[r] = 1;  // Disattiva riga
+                return keys[r][c];
+            }
+        }
+
+        *rows[r] = 1;  // Disattiva riga
+    }
+
+    return '\0';  // Nessun tasto premuto
+}
+#endif
+
 // ======================================================================================
 // SENSORI
 // ======================================================================================
@@ -330,8 +424,8 @@ int leggiDistanza() {
     int somma = 0;
     int validi = 0;
 
-    // Campiona 5 volte invece di 3 per maggiore affidabilità
-    for(int i=0; i<5; i++) {
+    // Campiona 3 volte (ridotto da 5 per overhead)
+    for(int i=0; i<3; i++) {
         trig = 0; wait_us(5);
         trig = 1; wait_us(15);  // Pulse più lungo per affidabilità
         trig = 0;
@@ -350,7 +444,7 @@ int leggiDistanza() {
 
     if (validi == 0) {
         // Nessuna lettura valida: usa ultima distanza valida con decadimento lento
-        printf("[SONAR] Timeout completo, uso ultima valida: %dcm\n", ultimaDistanzaValida);
+        // DEBUG: printf("[SONAR] Timeout completo, uso ultima valida: %dcm\n", ultimaDistanzaValida);
         return ultimaDistanzaValida;
     }
 
@@ -358,7 +452,7 @@ int leggiDistanza() {
 
     // Filtro anti-spike: se la differenza è > 100cm, probabilmente è rumore
     if (abs(media - ultimaDistanzaValida) > 100 && ultimaDistanzaValida < 400) {
-        printf("[SONAR] Spike rilevato %d->%d, mantengo precedente\n", ultimaDistanzaValida, media);
+        // DEBUG: printf("[SONAR] Spike rilevato %d->%d, mantengo precedente\n", ultimaDistanzaValida, media);
         return ultimaDistanzaValida;
     }
 
@@ -423,13 +517,129 @@ void dht_reader_thread() {
 // ======================================================================================
 void updateMachine() {
     static int counterTemp = 0;
+    static int counterDist = 0;
     static int blinkTimer = 0;
     static int logCounter = 0;
 
     watchdog.kick();
 
     int ldr_val = (int)(ldr.read() * 100);
-    int dist = leggiDistanza();
+
+    // DEBUG LDR: Stampa valore ogni 10 cicli (ogni secondo circa)
+    static int ldr_debug_counter = 0;
+    if (++ldr_debug_counter >= 10) {
+        ldr_debug_counter = 0;
+        printf("[LDR DEBUG] Valore: %d%%  |  Soglia scatto: 25  |  Soglia reset: 15\n", ldr_val);
+    }
+
+    // Leggi distanza solo ogni 2s (stesso rate dei sensori temp/hum)
+    if (++counterDist >= 20) {
+        counterDist = 0;
+        dist = leggiDistanza();
+    }
+
+#if KEYPAD_ENABLED
+    // TASTIERA 4x3 - Lettura e debouncing
+    char tasto = scanKeypad();
+    if (tasto != '\0' && !tastoInLettura) {
+        if (!keypadTimerStarted) {
+            keypadDebounceTimer.reset();
+            keypadDebounceTimer.start();
+            keypadTimerStarted = true;
+            ultimoTasto = tasto;
+        }
+
+        if (keypadDebounceTimer.elapsed_time().count() > KEYPAD_DEBOUNCE_TIME_US) {
+            tastoInLettura = true;
+            printf("[KEYPAD] Tasto premuto: %c\n", tasto);
+
+            // Gestione tasti in base allo stato
+            if (statoCorrente == RIPOSO || statoCorrente == ATTESA_MONETA) {
+                // Tasti selezione prodotti (1-4)
+                if (tasto == '1') {
+                    if (scorte[1] > 0) {
+                        idProdotto = 1;
+                        prezzoSelezionato = PREZZO_ACQUA;
+                        setRGB(0, 1, 1);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] ACQUA selezionata (scorte=%d)\n", scorte[1]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] ACQUA esaurita\n");
+                    }
+                }
+                else if (tasto == '2') {
+                    if (scorte[2] > 0) {
+                        idProdotto = 2;
+                        prezzoSelezionato = PREZZO_SNACK;
+                        setRGB(1, 0, 1);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] SNACK selezionato (scorte=%d)\n", scorte[2]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] SNACK esaurito\n");
+                    }
+                }
+                else if (tasto == '3') {
+                    if (scorte[3] > 0) {
+                        idProdotto = 3;
+                        prezzoSelezionato = PREZZO_CAFFE;
+                        setRGB(1, 1, 0);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] CAFFE selezionato (scorte=%d)\n", scorte[3]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] CAFFE esaurito\n");
+                    }
+                }
+                else if (tasto == '4') {
+                    if (scorte[4] > 0) {
+                        idProdotto = 4;
+                        prezzoSelezionato = PREZZO_THE;
+                        setRGB(0, 1, 0);
+                        timerUltimaMoneta.reset();
+                        printf("[KEYPAD] THE selezionato (scorte=%d)\n", scorte[4]);
+                        if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
+                    } else {
+                        printf("[KEYPAD] THE esaurito\n");
+                    }
+                }
+                // Tasto CONFERMA (D)
+                else if (tasto == 'D' && statoCorrente == ATTESA_MONETA) {
+                    printf("[KEYPAD] CONFERMA: credito=%d, prezzo=%d\n", credito, prezzoSelezionato);
+                    if (credito >= prezzoSelezionato) {
+                        printf("[KEYPAD] Accettata: avvio erogazione\n");
+                        statoCorrente = EROGAZIONE;
+                        timerStato.reset();
+                        timerStato.start();
+                        if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                    } else {
+                        printf("[KEYPAD] Rifiutata: credito insufficiente\n");
+                    }
+                }
+                // Tasto ANNULLA (A)
+                else if (tasto == 'A' && statoCorrente == ATTESA_MONETA && credito > 0) {
+                    printf("[KEYPAD] ANNULLA - Resto: %dE\n", credito);
+                    setRGB(1, 0, 1);
+                    statoCorrente = RESTO;
+                    timerStato.reset();
+                    timerStato.start();
+                    if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+                }
+            }
+
+            keypadDebounceTimer.stop();
+            keypadTimerStarted = false;
+        }
+    } else if (tasto == '\0') {
+        // Nessun tasto premuto: reset debouncing
+        tastoInLettura = false;
+        if (keypadTimerStarted) {
+            keypadDebounceTimer.stop();
+            keypadTimerStarted = false;
+        }
+    }
+#endif
 
     // LOG DETTAGLIATO: Stampa variabili principali ogni secondo (10 cicli @ 100ms)
     if (++logCounter >= 10) {
