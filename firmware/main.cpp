@@ -2,8 +2,14 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.5 CLEAN (Stock Management + LCD Only)
+ * VERSIONE: v8.5 STABLE + DETAILED LOGGING (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.5-LOG (2025-01-02):
+ * - [FEATURE] Aggiunto log dettagliato variabili principali ogni secondo
+ * - [DEBUG] Monitor seriale mostra: stato FSM, credito, pin LDR, temp, hum, dist, scorte
+ * - [STABILITY] Ritorno a configurazione pin stabile pre-v8.8 (ultimo funzionante)
+ * - [PIN] Configurazione: LDR=A2, ECHO=D9, TRIG=A1, DHT=D4, SERVO=D5, BUZZER=D2
  *
  * CHANGELOG v8.5:
  * - [FIX] Filtro anti-spike per sensore HC-SR04 (elimina letture spurie 999cm)
@@ -418,11 +424,38 @@ void dht_reader_thread() {
 void updateMachine() {
     static int counterTemp = 0;
     static int blinkTimer = 0;
+    static int logCounter = 0;
 
     watchdog.kick();
 
     int ldr_val = (int)(ldr.read() * 100);
     int dist = leggiDistanza();
+
+    // LOG DETTAGLIATO: Stampa variabili principali ogni secondo (10 cicli @ 100ms)
+    if (++logCounter >= 10) {
+        logCounter = 0;
+        dhtMutex.lock();
+        int temp_copy = temp_int;
+        int hum_copy = hum_int;
+        dhtMutex.unlock();
+
+        const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
+        printf("\n╔════════════════════════════════════════════════════════════════╗\n");
+        printf("║ [STATUS] VendingMonitor v8.5 - Monitor Variabili Principali  ║\n");
+        printf("╠════════════════════════════════════════════════════════════════╣\n");
+        printf("║ STATO FSM:  %-20s                      ║\n", nomiStati[statoCorrente]);
+        printf("║ CREDITO:    %3d EUR                                          ║\n", credito);
+        printf("║ PRODOTTO:   ID=%d  Prezzo=%dEUR                              ║\n", idProdotto, prezzoSelezionato);
+        printf("╠════════════════════════════════════════════════════════════════╣\n");
+        printf("║ PIN LDR:    A2 = %3d%%  (Soglia: %d/%d)                      ║\n", ldr_val, SOGLIA_LDR_SCATTO, SOGLIA_LDR_RESET);
+        printf("║ DISTANZA:   %3dcm  (Soglia attiva: %dcm)                      ║\n", dist, DISTANZA_ATTIVA);
+        printf("║ TEMP:       %2d°C   (Soglia allarme: %d°C)                    ║\n", temp_copy, SOGLIA_TEMP);
+        printf("║ UMIDITÀ:    %2d%%                                             ║\n", hum_copy);
+        printf("╠════════════════════════════════════════════════════════════════╣\n");
+        printf("║ SCORTE:  ACQUA=%d  SNACK=%d  CAFFE=%d  THE=%d                 ║\n",
+               scorte[1], scorte[2], scorte[3], scorte[4]);
+        printf("╚════════════════════════════════════════════════════════════════╝\n\n");
+    }
 
     // Aggiorna sensori ogni 2s
     if (++counterTemp > 20) {
@@ -780,7 +813,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.5 CLEAN");
+    lcd.printf("BOOT v8.5+LOG");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
