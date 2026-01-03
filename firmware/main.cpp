@@ -7,11 +7,11 @@
  *
  * CHANGELOG v8.7 (2025-01-03):
  * - [FIX] LDR debouncing ridotto: 5→3 campioni, 300ms→200ms (risolve mancato rilevamento)
- * - [DEBUG] Aggiunto log dettagliato LDR: campioni, elapsed, soglie
  * - [FIX] LED RGB configurabile: common cathode/anode via LED_RGB_INVERTED
- * - [DEBUG] Log LDR mostra: campione X/3, valore %, elapsed ms, reset eventi
  * - [FIX CRITICAL] FSM bloccato in RIPOSO: sonar ora campiona ogni 500ms in RIPOSO (era 5s)
  * - [PERFORMANCE] Sonar adattivo: 500ms in RIPOSO (reattivo), 5s in altri stati (efficiente)
+ * - [FIX] LCD residui countdown: padding 16 caratteri con spazi su tutte le stringhe
+ * - [CLEANUP] Rimossi log debug LDR verbosi - output pulito
  *
  * CHANGELOG v8.6:
  * - [PERFORMANCE] Sonar campionato ogni 5s invece che ogni 100ms (50x riduzione overhead)
@@ -501,14 +501,10 @@ void updateMachine() {
         if (ldr_val > SOGLIA_LDR_SCATTO && !monetaInLettura) {
             if (ldrSampleCount == 0) {
                 ldrDebounceTimer.start();
-                printf("[LDR-DEBUG] Inizio rilevamento: %d%%\n", ldr_val);
             }
             ldrSampleCount++;
 
             uint64_t elapsed = ldrDebounceTimer.elapsed_time().count();
-            printf("[LDR-DEBUG] Campione %d/%d | %d%% | Elapsed: %dms\n",
-                   ldrSampleCount, LDR_DEBOUNCE_SAMPLES, ldr_val, (int)(elapsed/1000));
-
             if (ldrSampleCount >= LDR_DEBOUNCE_SAMPLES && elapsed > LDR_DEBOUNCE_TIME_US) {
                 monetaInLettura = true;
                 credito++;
@@ -520,16 +516,12 @@ void updateMachine() {
                 if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
 
-                printf("[LDR] ✓ Moneta rilevata! Credito=%d EUR\n", credito);
+                printf("[LDR] Moneta rilevata! Credito=%d EUR\n", credito);
             }
         } else if (ldr_val < SOGLIA_LDR_RESET) {
             if (monetaInLettura) {
                 monetaInLettura = false;
                 ldrDebounceTimer.stop();
-                printf("[LDR-DEBUG] Reset: moneta passata\n");
-            }
-            if (ldrSampleCount > 0) {
-                printf("[LDR-DEBUG] Reset contatore: %d%% < soglia reset %d%%\n", ldr_val, SOGLIA_LDR_RESET);
             }
             ldrSampleCount = 0;
         }
@@ -590,37 +582,42 @@ void updateMachine() {
                 secondiMancanti = (TIMEOUT_RESTO_AUTO - tempoPassato) / 1000000;
             }
 
-            // Mostra stato credito e richiesta conferma
+            // Mostra stato credito e richiesta conferma (padding 16 caratteri)
+            char buf[17];  // 16 caratteri + \0
             if (credito >= prezzoSelezionato) {
                 // Credito sufficiente: richiede conferma esplicita
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Premi CONFERMA!");
-                lcd.printf("%s", buf);
+                snprintf(buf, sizeof(buf), "%-16s", "Premi CONFERMA!");
             } else if (credito > 0 && credito < prezzoSelezionato) {
                 // Credito parziale: mostra quanto manca
-                char buf[17];
-                snprintf(buf, sizeof(buf), "Cr:%dE T:%02ds", credito, secondiMancanti);
-                lcd.printf("%s", buf);
+                char temp[17];
+                snprintf(temp, sizeof(temp), "Cr:%dE T:%02ds", credito, secondiMancanti);
+                snprintf(buf, sizeof(buf), "%-16s", temp);
             } else {
                 // Credito zero: mostra prodotto selezionato
-                if(idProdotto==1)      lcd.printf("Ins.Mon x ACQUA ");
-                else if(idProdotto==2) lcd.printf("Ins.Mon x SNACK ");
-                else if(idProdotto==3) lcd.printf("Ins.Mon x CAFFE ");
-                else                   lcd.printf("Ins.Mon x THE   ");
+                if(idProdotto==1)      snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x ACQUA");
+                else if(idProdotto==2) snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x SNACK");
+                else if(idProdotto==3) snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x CAFFE");
+                else                   snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x THE");
             }
+            lcd.printf("%s", buf);
 
             wait_us(500);
             lcd.setCursor(0, 1);
             wait_us(500);
+
+            // Riga 2: credito/timeout o prezzo/scorte (padding 16 caratteri)
             char buf2[17];
             if(credito > 0) {
                 // Mostra credito e timeout resto
-                snprintf(buf2, sizeof(buf2), "Cr:%d/%d T:%02ds", credito, prezzoSelezionato, secondiMancanti);
+                char temp[17];
+                snprintf(temp, sizeof(temp), "Cr:%d/%d T:%02ds", credito, prezzoSelezionato, secondiMancanti);
+                snprintf(buf2, sizeof(buf2), "%-16s", temp);
             } else {
                 // Mostra prezzo e scorte prodotto selezionato
                 const char* nomi[] = {"", "ACQUA", "SNACK", "CAFFE", "THE"};
-                snprintf(buf2, sizeof(buf2), "%s:%dE Rim:%d",
-                         nomi[idProdotto], prezzoSelezionato, scorte[idProdotto]);
+                char temp[17];
+                snprintf(temp, sizeof(temp), "%s:%dE Rim:%d", nomi[idProdotto], prezzoSelezionato, scorte[idProdotto]);
+                snprintf(buf2, sizeof(buf2), "%-16s", temp);
             }
             lcd.printf("%s", buf2);
 
