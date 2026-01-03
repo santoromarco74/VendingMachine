@@ -2,12 +2,14 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.5 STABLE + DETAILED LOGGING (Stock Management + LCD Only)
+ * VERSIONE: v8.6 OPTIMIZED LOGGING (Stock Management + LCD Only)
  * ======================================================================================
  *
- * CHANGELOG v8.5-LOG (2025-01-02):
- * - [FEATURE] Aggiunto log dettagliato variabili principali ogni secondo
- * - [DEBUG] Monitor seriale mostra: stato FSM, credito, pin LDR, temp, hum, dist, scorte
+ * CHANGELOG v8.6 (2025-01-03):
+ * - [PERFORMANCE] Sonar campionato ogni 5s invece che ogni 100ms (50x riduzione overhead)
+ * - [CLEANUP] Eliminati log debug sonar (timeout, spike) - output pulito
+ * - [UX] Log compatto su singola riga invece di box ASCII (12 righe → 1 riga)
+ * - [DEBUG] Monitor ogni 2s: stato, credito, prodotto, LDR, dist, temp, hum, scorte
  * - [STABILITY] Ritorno a configurazione pin stabile pre-v8.8 (ultimo funzionante)
  * - [PIN] Configurazione: LDR=A2, ECHO=D9, TRIG=A1, DHT=D4, SERVO=D5, BUZZER=D2
  *
@@ -349,16 +351,14 @@ int leggiDistanza() {
     }
 
     if (validi == 0) {
-        // Nessuna lettura valida: usa ultima distanza valida con decadimento lento
-        printf("[SONAR] Timeout completo, uso ultima valida: %dcm\n", ultimaDistanzaValida);
+        // Nessuna lettura valida: usa ultima distanza valida (SILENZIOSO)
         return ultimaDistanzaValida;
     }
 
     int media = somma / validi;
 
-    // Filtro anti-spike: se la differenza è > 100cm, probabilmente è rumore
+    // Filtro anti-spike: se la differenza è > 100cm, probabilmente è rumore (SILENZIOSO)
     if (abs(media - ultimaDistanzaValida) > 100 && ultimaDistanzaValida < 400) {
-        printf("[SONAR] Spike rilevato %d->%d, mantengo precedente\n", ultimaDistanzaValida, media);
         return ultimaDistanzaValida;
     }
 
@@ -423,16 +423,23 @@ void dht_reader_thread() {
 // ======================================================================================
 void updateMachine() {
     static int counterTemp = 0;
+    static int counterDist = 0;
     static int blinkTimer = 0;
     static int logCounter = 0;
+    static int dist = 100;  // Cache distanza
 
     watchdog.kick();
 
     int ldr_val = (int)(ldr.read() * 100);
-    int dist = leggiDistanza();
 
-    // LOG DETTAGLIATO: Stampa variabili principali ogni secondo (10 cicli @ 100ms)
-    if (++logCounter >= 10) {
+    // Campiona distanza solo ogni 5 secondi (50 cicli @ 100ms) - RIDOTTO OVERHEAD
+    if (++counterDist >= 50) {
+        counterDist = 0;
+        dist = leggiDistanza();
+    }
+
+    // LOG COMPATTO: Stampa variabili su singola riga ogni 2 secondi (20 cicli @ 100ms)
+    if (++logCounter >= 20) {
         logCounter = 0;
         dhtMutex.lock();
         int temp_copy = temp_int;
@@ -440,21 +447,10 @@ void updateMachine() {
         dhtMutex.unlock();
 
         const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
-        printf("\n╔════════════════════════════════════════════════════════════════╗\n");
-        printf("║ [STATUS] VendingMonitor v8.5 - Monitor Variabili Principali  ║\n");
-        printf("╠════════════════════════════════════════════════════════════════╣\n");
-        printf("║ STATO FSM:  %-20s                      ║\n", nomiStati[statoCorrente]);
-        printf("║ CREDITO:    %3d EUR                                          ║\n", credito);
-        printf("║ PRODOTTO:   ID=%d  Prezzo=%dEUR                              ║\n", idProdotto, prezzoSelezionato);
-        printf("╠════════════════════════════════════════════════════════════════╣\n");
-        printf("║ PIN LDR:    A2 = %3d%%  (Soglia: %d/%d)                      ║\n", ldr_val, SOGLIA_LDR_SCATTO, SOGLIA_LDR_RESET);
-        printf("║ DISTANZA:   %3dcm  (Soglia attiva: %dcm)                      ║\n", dist, DISTANZA_ATTIVA);
-        printf("║ TEMP:       %2d°C   (Soglia allarme: %d°C)                    ║\n", temp_copy, SOGLIA_TEMP);
-        printf("║ UMIDITÀ:    %2d%%                                             ║\n", hum_copy);
-        printf("╠════════════════════════════════════════════════════════════════╣\n");
-        printf("║ SCORTE:  ACQUA=%d  SNACK=%d  CAFFE=%d  THE=%d                 ║\n",
+        printf("[STATUS] %-14s | €%-2d | P%d@%dEUR | LDR:%2d%% | DIST:%3dcm | T:%2d°C H:%2d%% | SCORTE: A%d S%d C%d T%d\n",
+               nomiStati[statoCorrente], credito, idProdotto, prezzoSelezionato,
+               ldr_val, dist, temp_copy, hum_copy,
                scorte[1], scorte[2], scorte[3], scorte[4]);
-        printf("╚════════════════════════════════════════════════════════════════╝\n\n");
     }
 
     // Aggiorna sensori ogni 2s
@@ -470,7 +466,6 @@ void updateMachine() {
             if (valid) {
                 vendingServicePtr->updateTemp(temp_copy);
                 vendingServicePtr->updateHum(hum_copy);
-                printf("[SENSORI] Temp: %d°C | Hum: %d%% | Dist: %dcm\n", temp_copy, hum_copy, dist);
             }
         }
 
@@ -813,7 +808,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.5+LOG");
+    lcd.printf("BOOT v8.6 OPT");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
