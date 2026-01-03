@@ -12,6 +12,8 @@
  * - [PERFORMANCE] Sonar adattivo: 500ms in RIPOSO (reattivo), 5s in altri stati (efficiente)
  * - [FIX] LCD residui countdown: padding 16 caratteri con spazi su tutte le stringhe
  * - [CLEANUP] Rimossi log debug LDR verbosi - output pulito
+ * - [FIX CRITICAL] Sonar bloccato su distanze vicine: filtro anti-spike ora asimmetrico
+ * - [ALGORITHM] Permette allontanamenti rapidi, blocca solo avvicinamenti > 150cm
  *
  * CHANGELOG v8.6:
  * - [PERFORMANCE] Sonar campionato ogni 5s invece che ogni 100ms (50x riduzione overhead)
@@ -371,8 +373,11 @@ int leggiDistanza() {
 
     int media = somma / validi;
 
-    // Filtro anti-spike: se la differenza è > 100cm, probabilmente è rumore (SILENZIOSO)
-    if (abs(media - ultimaDistanzaValida) > 100 && ultimaDistanzaValida < 400) {
+    // Filtro anti-spike asimmetrico:
+    // - PERMETTE allontanamenti rapidi (utente può allontanarsi velocemente)
+    // - BLOCCA solo avvicinamenti improvvisi > 150cm (probabilmente errori sensore)
+    if (media < ultimaDistanzaValida - 150) {
+        // Spike negativo eccessivo: da lontano a vicino troppo rapidamente
         return ultimaDistanzaValida;
     }
 
