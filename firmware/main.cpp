@@ -2,10 +2,16 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.6 OPTIMIZED LOGGING (Stock Management + LCD Only)
+ * VERSIONE: v8.7 OPTIMIZED + LDR FIX (Stock Management + LCD Only)
  * ======================================================================================
  *
- * CHANGELOG v8.6 (2025-01-03):
+ * CHANGELOG v8.7 (2025-01-03):
+ * - [FIX] LDR debouncing ridotto: 5→3 campioni, 300ms→200ms (risolve mancato rilevamento)
+ * - [DEBUG] Aggiunto log dettagliato LDR: campioni, elapsed, soglie
+ * - [FIX] LED RGB configurabile: common cathode/anode via LED_RGB_INVERTED
+ * - [DEBUG] Log LDR mostra: campione X/3, valore %, elapsed ms, reset eventi
+ *
+ * CHANGELOG v8.6:
  * - [PERFORMANCE] Sonar campionato ogni 5s invece che ogni 100ms (50x riduzione overhead)
  * - [CLEANUP] Eliminati log debug sonar (timeout, spike) - output pulito
  * - [UX] Log compatto su singola riga invece di box ASCII (12 righe → 1 riga)
@@ -84,8 +90,8 @@
 // TIMEOUT_EROGAZIONE_AUTO rimosso in v8.4: erogazione solo su conferma esplicita (cmd 10)
 
 // --- DEBOUNCING LDR ---
-#define LDR_DEBOUNCE_SAMPLES 5
-#define LDR_DEBOUNCE_TIME_US 300000
+#define LDR_DEBOUNCE_SAMPLES 3   // Ridotto da 5 a 3 per compensare oscillazioni
+#define LDR_DEBOUNCE_TIME_US 200000  // Ridotto da 300ms a 200ms
 
 // --- PREZZI ---
 #define PREZZO_ACQUA      1
@@ -120,12 +126,18 @@ DigitalOut buzzer(PIN_BUZZER);
 DigitalIn tastoAnnulla(PC_13);
 
 // --- LED RGB ---
+#define LED_RGB_INVERTED 0  // 1=Common Anode (inverti), 0=Common Cathode (diretto)
+
 DigitalOut ledR(D6);
 DigitalOut ledG(D8);
 DigitalOut ledB(A3);
 
 void setRGB(int r, int g, int b) {
-    ledR = r; ledG = g; ledB = b;
+#if LED_RGB_INVERTED
+    ledR = !r; ledG = !g; ledB = !b;  // Inverti per common anode
+#else
+    ledR = r; ledG = g; ledB = b;     // Diretto per common cathode
+#endif
 }
 
 BufferedSerial pc(USBTX, USBRX, 9600);
@@ -486,10 +498,14 @@ void updateMachine() {
         if (ldr_val > SOGLIA_LDR_SCATTO && !monetaInLettura) {
             if (ldrSampleCount == 0) {
                 ldrDebounceTimer.start();
+                printf("[LDR-DEBUG] Inizio rilevamento: %d%%\n", ldr_val);
             }
             ldrSampleCount++;
 
             uint64_t elapsed = ldrDebounceTimer.elapsed_time().count();
+            printf("[LDR-DEBUG] Campione %d/%d | %d%% | Elapsed: %dms\n",
+                   ldrSampleCount, LDR_DEBOUNCE_SAMPLES, ldr_val, (int)(elapsed/1000));
+
             if (ldrSampleCount >= LDR_DEBOUNCE_SAMPLES && elapsed > LDR_DEBOUNCE_TIME_US) {
                 monetaInLettura = true;
                 credito++;
@@ -501,12 +517,16 @@ void updateMachine() {
                 if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
 
-                printf("[LDR] Moneta rilevata! Credito=%d\n", credito);
+                printf("[LDR] ✓ Moneta rilevata! Credito=%d EUR\n", credito);
             }
         } else if (ldr_val < SOGLIA_LDR_RESET) {
             if (monetaInLettura) {
                 monetaInLettura = false;
                 ldrDebounceTimer.stop();
+                printf("[LDR-DEBUG] Reset: moneta passata\n");
+            }
+            if (ldrSampleCount > 0) {
+                printf("[LDR-DEBUG] Reset contatore: %d%% < soglia reset %d%%\n", ldr_val, SOGLIA_LDR_RESET);
             }
             ldrSampleCount = 0;
         }
@@ -808,7 +828,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.6 OPT");
+    lcd.printf("BOOT v8.7 FIX");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
