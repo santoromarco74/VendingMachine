@@ -2,7 +2,7 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.7 OPTIMIZED + LDR FIX (Stock Management + LCD Only)
+ * VERSIONE: v8.7 OPTIMIZED + LDR + FSM FIX (Stock Management + LCD Only)
  * ======================================================================================
  *
  * CHANGELOG v8.7 (2025-01-03):
@@ -10,6 +10,8 @@
  * - [DEBUG] Aggiunto log dettagliato LDR: campioni, elapsed, soglie
  * - [FIX] LED RGB configurabile: common cathode/anode via LED_RGB_INVERTED
  * - [DEBUG] Log LDR mostra: campione X/3, valore %, elapsed ms, reset eventi
+ * - [FIX CRITICAL] FSM bloccato in RIPOSO: sonar ora campiona ogni 500ms in RIPOSO (era 5s)
+ * - [PERFORMANCE] Sonar adattivo: 500ms in RIPOSO (reattivo), 5s in altri stati (efficiente)
  *
  * CHANGELOG v8.6:
  * - [PERFORMANCE] Sonar campionato ogni 5s invece che ogni 100ms (50x riduzione overhead)
@@ -444,8 +446,9 @@ void updateMachine() {
 
     int ldr_val = (int)(ldr.read() * 100);
 
-    // Campiona distanza solo ogni 5 secondi (50 cicli @ 100ms) - RIDOTTO OVERHEAD
-    if (++counterDist >= 50) {
+    // Campiona distanza con frequenza variabile in base allo stato
+    int sogliaDistanza = (statoCorrente == RIPOSO) ? 5 : 50;  // RIPOSO: ogni 500ms, altri stati: ogni 5s
+    if (++counterDist >= sogliaDistanza) {
         counterDist = 0;
         dist = leggiDistanza();
     }
