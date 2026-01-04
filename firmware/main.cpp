@@ -2,8 +2,14 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.7 OPTIMIZED + LDR + FSM FIX (Stock Management + LCD Only)
+ * VERSIONE: v8.8 BLE NOTIFICATION (Stock Management + LCD Only)
  * ======================================================================================
+ *
+ * CHANGELOG v8.8 (2025-01-04):
+ * - [FEATURE] Notifica connessione/disconnessione BLE sul log seriale
+ * - [FEATURE] Flag bleConnesso per monitorare stato connessione
+ * - [FEATURE] Feedback visivo LED blu su connessione BLE
+ * - [UX] Log STATUS ora mostra stato BLE: "BLE:ON" o "BLE:OFF"
  *
  * CHANGELOG v8.7 (2025-01-03):
  * - [FIX] LDR debouncing ridotto: 5→3 campioni, 300ms→200ms (risolve mancato rilevamento)
@@ -326,11 +332,29 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
 };
 
 // ======================================================================================
-// GESTORE EVENTI GAP
+// GESTORE EVENTI GAP (Connessione/Disconnessione BLE)
 // ======================================================================================
+bool bleConnesso = false;  // Flag stato connessione BLE
+
 class VendingGapEventHandler : public ble::Gap::EventHandler {
 public:
+    void onConnectionComplete(const ble::ConnectionCompleteEvent &event) override {
+        if (event.getStatus() == BLE_ERROR_NONE) {
+            bleConnesso = true;
+            printf("[BLE] ✓ Dispositivo CONNESSO\n");
+
+            // Feedback visivo: lampeggio LED blu
+            setRGB(0, 0, 1);  // Blu
+            thread_sleep_for(200);
+            setRGB(0, 1, 0);  // Torna verde
+        }
+    }
+
     void onDisconnectionComplete(const ble::DisconnectionCompleteEvent &event) override {
+        bleConnesso = false;
+        printf("[BLE] ✗ Dispositivo DISCONNESSO\n");
+
+        // Riavvia advertising per nuove connessioni
         BLE::Instance().gap().startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
     }
 };
@@ -467,7 +491,8 @@ void updateMachine() {
         dhtMutex.unlock();
 
         const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
-        printf("[STATUS] %-14s | €%-2d | P%d@%dEUR | LDR:%2d%% | DIST:%3dcm | T:%2d°C H:%2d%% | SCORTE: A%d S%d C%d T%d\n",
+        printf("[STATUS] %s | %-14s | €%-2d | P%d@%dEUR | LDR:%2d%% | DIST:%3dcm | T:%2d°C H:%2d%% | A%d S%d C%d T%d\n",
+               bleConnesso ? "BLE:ON " : "BLE:OFF",
                nomiStati[statoCorrente], credito, idProdotto, prezzoSelezionato,
                ldr_val, dist, temp_copy, hum_copy,
                scorte[1], scorte[2], scorte[3], scorte[4]);
@@ -833,7 +858,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.7 FIX");
+    lcd.printf("BOOT v8.8 BLE");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
