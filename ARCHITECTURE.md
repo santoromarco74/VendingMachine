@@ -360,7 +360,7 @@ flowchart TD
     G1 -->|NO| M[🚫 RIFIUTA<br/>stato invalido]
     G1 -->|SI| G2{credito ≥ prezzo?}
     G2 -->|NO| N[🚫 RIFIUTA<br/>credito insufficiente]
-    G2 -->|SI| G3{scorte[id] > 0?}
+    G2 -->|SI| G3{"scorte > 0?"}
     G3 -->|NO| O[🚫 BLOCCA<br/>scorte esaurite]
     G3 -->|SI| P[✅ Vai a EROGAZIONE]
 
