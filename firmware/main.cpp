@@ -2,8 +2,16 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.11 AUTO-REFUND (Immediate Refund on BLE Disconnect)
+ * VERSIONE: v8.12 SONAR-FIX (Fixed HC-SR04 Stuck at 6cm)
  * ======================================================================================
+ *
+ * CHANGELOG v8.12 (2026-01-06):
+ * - [FIX CRITICAL] Risolto sonar HC-SR04 bloccato a 6cm costanti
+ * - [FIX] echoDuration ora viene azzerata prima di ogni misura (prevenzione valori obsoleti)
+ * - [FIX] Aumentato timeout echo: 15ms → 25ms per range completo 400cm
+ * - [FIX] Aggiunta pausa 60ms tra misure consecutive (spec HC-SR04 "quiet time")
+ * - [DEBUG] Logging dettagliato sonar: echoDuration, campioni validi, timeout
+ * - [DEBUG] Identifica automaticamente problemi hardware (ECHO/TRIG disconnessi)
  *
  * CHANGELOG v8.11 (2025-01-06):
  * - [FEATURE] Resto automatico immediato quando BLE si disconnette (se credito > 0)
@@ -564,6 +572,10 @@ int leggiDistanza() {
     // FASE 1: CAMPIONAMENTO MULTIPLO (5 letture)
     // Riduce errori casuali, migliora precisione
     for(int i=0; i<5; i++) {
+        // CRITICAL FIX: Azzera echoDuration prima di ogni misura
+        // Previene uso di valori obsoleti se sensore non risponde
+        echoDuration = 0;
+
         // Genera impulso trigger 15μs (spec HC-SR04: min 10μs)
         trig = 0;
         wait_us(5);        // Assicura fronte di discesa pulito
@@ -571,8 +583,9 @@ int leggiDistanza() {
         wait_us(15);       // Impulso HIGH 15μs
         trig = 0;
 
-        // Attende risposta echo (max 15ms = ~250cm range attesa)
-        wait_us(15000);
+        // Attende risposta echo con timeout maggiorato
+        // HC-SR04 max range ~400cm = 23ms andata/ritorno
+        wait_us(25000);    // 25ms timeout (era 15ms)
 
         // FASE 2: VALIDAZIONE TIMEOUT E RANGE
         // echoDuration scritto da ISR interrupt (echoFall)
@@ -585,7 +598,25 @@ int leggiDistanza() {
             if (distanza >= 2 && distanza <= 400) {
                 somma += distanza;  // Accumula per media
                 validi++;
+            } else {
+                // DEBUG: Distanza fuori range
+                printf("[SONAR] Campione %d: echoDuration=%lluμs → %dcm FUORI RANGE (2-400cm)\n",
+                       i+1, echoDuration, distanza);
             }
+        } else {
+            // DEBUG: Timeout o echoDuration invalida
+            if (echoDuration == 0) {
+                printf("[SONAR] Campione %d: TIMEOUT - echoDuration=0 (ISR non chiamata? Verificare ECHO collegato)\n", i+1);
+            } else {
+                printf("[SONAR] Campione %d: TIMEOUT - echoDuration=%lluμs > 50ms (oltre range sensore)\n",
+                       i+1, echoDuration);
+            }
+        }
+
+        // CRITICAL FIX: Pausa 60ms tra misure consecutive
+        // HC-SR04 richiede "quiet time" per stabilizzarsi
+        if (i < 4) {  // Non aspettare dopo l'ultima misura
+            thread_sleep_for(60);
         }
     }
 
@@ -593,11 +624,20 @@ int leggiDistanza() {
     // Se tutti e 5 i campioni sono invalidi (timeout/fuori range),
     // mantieni ultima distanza nota per evitare salti a zero
     if (validi == 0) {
+        // DEBUG: Logging diagnostico quando tutte le letture falliscono
+        printf("[SONAR DEBUG] Tutte le 5 letture fallite! echoDuration rimasta a 0 - Possibile problema hardware (ECHO/TRIG disconnessi?)\n");
         return ultimaDistanzaValida;  // Failsafe: usa cache
     }
 
     // Calcola media aritmetica campioni validi
     int media = somma / validi;
+
+    // DEBUG: Logging quando letture riuscite
+    // Mostra quante letture valide, media calcolata, e valore echoDuration ultima misura
+    if (validi < 5) {
+        printf("[SONAR DEBUG] Solo %d/5 letture valide | Media: %dcm | echoDuration ultima misura: %llu μs\n",
+               validi, media, echoDuration);
+    }
 
     // FASE 4: FILTRO ANTI-SPIKE ASIMMETRICO (v8.7 Final)
     // PROBLEMA RISOLTO: filtro simmetrico bloccava allontanamenti rapidi

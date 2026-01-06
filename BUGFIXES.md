@@ -1,8 +1,118 @@
 # 🔧 Bug Fixes & Improvements
 
-**Data Fix**: 2025-12-22
-**Versione App**: v1.1
-**Versione Firmware**: v7.2
+**Ultimo aggiornamento**: 2026-01-06
+**Versione App**: v2.0
+**Versione Firmware**: v8.12
+
+---
+
+## 🎯 **FIRMWARE v8.12 - Sonar HC-SR04 Fix** (2026-01-06)
+
+### 🔴 **CRITICAL: Sensore Sonar Bloccato a 6cm**
+
+**Problema Riportato**:
+> "il sonar misura sempre 6 cm"
+
+**Sintomo**: Il sensore HC-SR04 restituiva sempre 6 cm indipendentemente dalla distanza reale.
+
+**Causa Root**:
+1. ❌ **echoDuration non azzerata**: La variabile `volatile uint64_t echoDuration` NON veniva azzerata prima di ogni nuova misura
+2. ❌ **Valori obsoleti**: Se il sensore non rispondeva (ISR non chiamata), echoDuration manteneva il valore della misura precedente (~350μs)
+3. ❌ **Timing insufficiente**: Solo 15ms di pausa tra misure, ma HC-SR04 richiede 60ms di "quiet time"
+4. ❌ **Timeout corto**: 15ms non sufficiente per range completo 400cm (servono 23ms)
+
+**Analisi Dettagliata**:
+```cpp
+// PRIMA (BUGGY) - firmware/main.cpp:566-590
+for(int i=0; i<5; i++) {
+    // ❌ echoDuration NON azzerata -> mantiene valore precedente!
+    trig = 0;
+    wait_us(5);
+    trig = 1;
+    wait_us(15);  // Impulso trigger
+    trig = 0;
+
+    wait_us(15000);  // ❌ Solo 15ms timeout (insufficiente per 400cm)
+
+    if (echoDuration > 0 && echoDuration < 50000) {
+        int distanza = (int)(echoDuration * 0.0343f / 2.0f);
+        if (distanza >= 2 && distanza <= 400) {
+            somma += distanza;
+            validi++;
+        }
+    }
+    // ❌ Nessuna pausa tra misure -> viola spec HC-SR04!
+}
+```
+
+**Scenario Bug**:
+1. Prima misura: echoDuration = 350μs → 6 cm ✓ (valore corretto)
+2. Seconda misura: sensore non risponde → echoDuration rimane 350μs
+3. Terza misura: sensore non risponde → echoDuration rimane 350μs
+4. Risultato: media sempre ~6 cm anche se distanza reale è diversa!
+
+**Fix Applicato**:
+```cpp
+// DOPO (FIXED) - firmware/main.cpp:566-612
+for(int i=0; i<5; i++) {
+    // ✅ FIX 1: Azzera echoDuration prima di ogni misura
+    echoDuration = 0;
+
+    trig = 0;
+    wait_us(5);
+    trig = 1;
+    wait_us(15);
+    trig = 0;
+
+    // ✅ FIX 2: Timeout aumentato 15ms → 25ms (copre 400cm)
+    wait_us(25000);
+
+    if (echoDuration > 0 && echoDuration < 50000) {
+        int distanza = (int)(echoDuration * 0.0343f / 2.0f);
+        if (distanza >= 2 && distanza <= 400) {
+            somma += distanza;
+            validi++;
+        }
+    }
+
+    // ✅ FIX 3: Pausa 60ms tra misure (spec HC-SR04)
+    if (i < 4) {
+        thread_sleep_for(60);
+    }
+}
+```
+
+**Modifiche Tecniche**:
+| Fix | Parametro | Prima | Dopo | Motivo |
+|-----|-----------|-------|------|--------|
+| 1 | echoDuration reset | ❌ No | ✅ Sì (=0) | Previene valori obsoleti |
+| 2 | Timeout echo | 15 ms | 25 ms | Range 400cm = 23ms teorici |
+| 3 | Pausa tra misure | 0 ms | 60 ms | Spec HC-SR04 quiet time |
+| 4 | Debug logging | ❌ No | ✅ Sì | Diagnostica hardware |
+
+**Debug Logging Aggiunto**:
+```cpp
+// Identifica timeout (echoDuration = 0)
+printf("[SONAR] Campione %d: TIMEOUT - echoDuration=0 (ISR non chiamata? Verificare ECHO collegato)\n", i+1);
+
+// Mostra letture parziali
+printf("[SONAR DEBUG] Solo %d/5 letture valide | Media: %dcm | echoDuration: %llu μs\n", validi, media, echoDuration);
+
+// Allarme tutte misure fallite
+printf("[SONAR DEBUG] Tutte le 5 letture fallite! echoDuration rimasta a 0 - Possibile problema hardware\n");
+```
+
+**Test Consigliati**:
+1. ✅ Verifica cablaggio: TRIG=A1, ECHO=D9, VCC=5V, GND=GND
+2. ✅ Compila e carica firmware v8.12
+3. ✅ Osserva serial log: deve mostrare distanze variabili (non fisso 6cm)
+4. ✅ Testa range: avvicina mano da 5cm a 100cm, distanza deve cambiare
+5. ⚠️ Se echoDuration sempre 0: problema hardware (ECHO disconnesso o ISR non configurati)
+6. ⚠️ Se echoDuration costante: possibile short circuit su pin ECHO
+
+**Impatto**: 🔴 CRITICAL - Rilevamento presenza utente non funzionante → FSM bloccato in RIPOSO
+
+**Commit**: `fix: Risolto sensore HC-SR04 bloccato a 6cm con timing corretto`
 
 ---
 
