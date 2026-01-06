@@ -1,6 +1,9 @@
-# 📐 Architettura e Diagrammi VendingMonitor v8.7 Final
+# 📐 Architettura e Diagrammi VendingMonitor v8.14
 
 Questa documentazione illustra graficamente il funzionamento del sistema VendingMonitor attraverso diagrammi esplicativi.
+
+**Versione Firmware**: v8.14 (LCD Refill Feedback + Sonar Stable)
+**Versione App Android**: v2.0 (Font migliorato + Documentazione IT)
 
 ---
 
@@ -379,30 +382,40 @@ flowchart TD
 
 ---
 
-## 📈 Ottimizzazioni v8.7 Final
+## 📈 Ottimizzazioni v8.14 (Versione Finale)
 
-### Sonar Campionamento Adattivo
+### LDR Spike Detection Adattivo (v8.9)
 
-| Stato FSM | Frequenza Campionamento | Motivazione |
-|-----------|------------------------|-------------|
-| **RIPOSO** | 500ms (2 Hz) | 🎯 Rileva presenza utente rapidamente |
-| **ATTESA_MONETA** | 5s (0.2 Hz) | ⚡ Riduce overhead, utente già presente |
-| **EROGAZIONE** | 5s (0.2 Hz) | ⚡ Non necessario durante erogazione |
-| **RESTO** | 5s (0.2 Hz) | ⚡ Non necessario durante resto |
+| Parametro | Prima (v8.8) | Dopo (v8.9) | Beneficio |
+|-----------|--------------|-------------|-----------|
+| **Baseline** | Fisso | EMA dinamico | ✅ Adatta a luce ambiente |
+| **Soglia** | Assoluta 25% | Relativa +20% | ✅ Funziona con qualsiasi luce |
+| **Reset** | 15% fisso | +5% baseline | ✅ Anti-flickering |
 
-### LDR Debouncing Ottimizzato
+**Algoritmo EMA (Exponential Moving Average):**
+```cpp
+ldrBaseline = ((100 - α) * ldrBaseline + α * ldr_val) / 100
+// α = 10 (aggressività aggiornamento)
+```
 
-**Prima (v8.5):**
-- Campioni richiesti: 5
-- Tempo minimo: 300ms
-- ❌ Problema: valori oscillanti non rilevati
+### Sonar HC-SR04 Stabilizzato (v8.13-v8.14)
 
-**Dopo (v8.7):**
-- Campioni richiesti: **3** (riduzione 40%)
-- Tempo minimo: **200ms** (riduzione 33%)
-- ✅ Compensa oscillazioni LDR
+| Fix | Problema | Soluzione | Impatto |
+|-----|----------|-----------|---------|
+| **echoDuration reset** | Valori obsoleti | `echoDuration = 0` prima di ogni misura | ✅ Letture affidabili |
+| **Timing ottimale** | Timeout ISR | Trig 10μs, timeout 15ms, no pause | ✅ Nessun timeout |
+| **Posizionamento** | "6cm fissi" | Sensore lontano da tavolo | ✅ Range 15-150cm |
 
-### Log Seriale Compatto
+### LCD Feedback Completo (v8.10-v8.14)
+
+| Evento | Messaggio LCD | Durata | Versione |
+|--------|---------------|--------|----------|
+| **BLE Connect** | "BLE CONNESSO! / App collegata" | 1.5s | v8.10 |
+| **BLE Disconnect** | "BLE DISCONNESSO / App scollegata" | 1.5s | v8.10 |
+| **Prodotto Confirm** | "Conf. x ACQUA!" (nome prodotto) | - | v8.10 |
+| **Rifornimento** | "RIFORNIMENTO... → OK! / Scorte: 5/5/5/5" | 2.8s | v8.14 |
+
+### Log Seriale Compatto (v8.7)
 
 **Prima (v8.5):**
 ```
@@ -416,11 +429,11 @@ flowchart TD
 ```
 **12 righe verticali**
 
-**Dopo (v8.7):**
+**Dopo (v8.14):**
 ```
-[STATUS] ATTESA_MONETA | €2 | P2@2EUR | LDR:25% | DIST:30cm | T:22°C H:48% | SCORTE: A5 S4 C5 T5
+[STATUS] BLE:ON | ATTESA_MONETA | €2 | P1@1EUR | LDR:47%(B:45 Δ:+2) | DIST:35cm | T:22°C H:48% | A5 S4 C5 T5
 ```
-**1 riga orizzontale** (riduzione 92% spazio)
+**1 riga orizzontale** con info baseline LDR (riduzione 92% spazio)
 
 ---
 
@@ -429,10 +442,12 @@ flowchart TD
 Questo sistema dimostra:
 - ✅ **FSM robusto** con gestione completa stati ed eventi
 - ✅ **Comunicazione BLE** bidirezionale (comandi + notifiche)
-- ✅ **Algoritmi ottimizzati** (filtro anti-spike asimmetrico, campionamento adattivo)
+- ✅ **Algoritmi adattivi** (LDR spike detection EMA, sonar stabile)
+- ✅ **UX eccellente** (LCD feedback completo, auto-refund, indicatori scorte)
 - ✅ **Validazioni di sicurezza** su scorte, credito, stati
-- ✅ **Performance eccellenti** (loop 100ms, watchdog 10s)
+- ✅ **Performance ottimali** (loop 100ms, watchdog 10s, log compatto)
 
-**Versione:** v8.7 Final
+**Versione Firmware:** v8.14 (LCD Refill Feedback + Sonar Stable)
+**Versione App:** v2.0 (Font migliorato + Documentazione IT)
 **Autore:** Marco Santoro
-**Data:** 2025-01-03
+**Data:** 2026-01-06

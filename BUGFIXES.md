@@ -2,7 +2,90 @@
 
 **Ultimo aggiornamento**: 2026-01-06
 **Versione App**: v2.0
-**Versione Firmware**: v8.13
+**Versione Firmware**: v8.14 (FINALE)
+
+---
+
+## 🎉 **FIRMWARE v8.14 - LCD Refill Feedback (FINALE)** (2026-01-06)
+
+### 🖥️ **UX: Mancava Feedback LCD Rifornimento Scorte**
+
+**Problema Riportato**:
+> "su lcd non viene visualizzata il mess di rifornimento merce"
+
+**Sintomo**: Premendo "RIFORNIMENTO SCORTE" dall'app Android, le scorte venivano aggiornate ma **nessun messaggio appariva sul LCD**.
+
+**Causa Root**:
+Il comando BLE 11 (rifornimento) eseguiva correttamente l'operazione ma **non forniva feedback visivo** all'utente:
+```cpp
+// PRIMA (v8.13) - firmware/main.cpp:450-457
+else if (cmd == 11) {
+    scorte[1] = SCORTE_MAX;
+    scorte[2] = SCORTE_MAX;
+    scorte[3] = SCORTE_MAX;
+    scorte[4] = SCORTE_MAX;
+    printf("[STOCK] Rifornimento completato: %d pezzi/prodotto\n", SCORTE_MAX);
+    if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+    // ❌ Nessun messaggio LCD!
+}
+```
+
+**Fix Applicato v8.14**:
+```cpp
+// DOPO (v8.14) - firmware/main.cpp:450-484
+else if (cmd == 11) {
+    // ✅ Fase 1: Notifica inizio (800ms)
+    lcd.clear();
+    wait_us(20000);
+    lcd.setCursor(0, 0);
+    lcd.printf("RIFORNIMENTO... ");
+    wait_us(500);
+    lcd.setCursor(0, 1);
+    lcd.printf("Attendere       ");
+
+    // Aggiorna scorte
+    scorte[1] = SCORTE_MAX;
+    scorte[2] = SCORTE_MAX;
+    scorte[3] = SCORTE_MAX;
+    scorte[4] = SCORTE_MAX;
+
+    // ✅ Fase 2: Conferma completamento (2000ms)
+    thread_sleep_for(800);
+    lcd.clear();
+    wait_us(20000);
+    lcd.setCursor(0, 0);
+    lcd.printf("RIFORNIMENTO OK!");
+    wait_us(500);
+    lcd.setCursor(0, 1);
+    lcd.printf("Scorte: 5/5/5/5 ");
+    thread_sleep_for(2000);
+
+    // Torna a display normale
+    lcd.clear();
+    wait_us(20000);
+}
+```
+
+**Sequenza LCD**:
+```
+1. [800ms]  RIFORNIMENTO...
+            Attendere
+
+2. [2000ms] RIFORNIMENTO OK!
+            Scorte: 5/5/5/5
+
+3.          [Torna a stato normale]
+```
+
+**UX Improvements**:
+- ✅ Feedback visivo immediato e chiaro
+- ✅ Conferma operazione completata
+- ✅ Info scorte aggiornate (5/5/5/5)
+- ✅ Consistente con messaggi BLE (connessione/disconnessione)
+
+**Impatto**: 🟢 MINOR - Migliora UX ma non critico per funzionalità
+
+**Commit**: `feat: Aggiunto feedback LCD per rifornimento scorte`
 
 ---
 
