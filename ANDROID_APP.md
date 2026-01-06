@@ -42,6 +42,17 @@ L'applicazione **VendingMonitor** è un'app Android nativa che permette il contr
 | **Orientamento** | Portrait |
 | **Tema** | Dark Theme Material Design 3 |
 
+### 📸 Screenshot e Demo
+
+**📷 Galleria Foto e Schermate App**: [Visualizza su Google Photos](https://photos.app.goo.gl/3RQU7nqLYPB2BmdA6)
+
+La galleria contiene:
+- Screenshot interfaccia utente completa
+- Dettagli componenti UI (pulsanti prodotto, sensori, stati)
+- Schermate connessione BLE
+- Demo funzionalità (selezione prodotti, conferma, resto)
+- Indicatori scorte e rifornimento
+
 ---
 
 ## 🏗️ TECNOLOGIE E ARCHITETTURA
@@ -808,10 +819,14 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 
 ### Link Utili
 
+**Documentazione Ufficiale**:
 - [Jetpack Compose Documentation](https://developer.android.com/jetpack/compose)
 - [Material Design 3](https://m3.material.io/)
 - [Android BLE Guide](https://developer.android.com/guide/topics/connectivity/bluetooth/ble-overview)
 - [Bluetooth GATT Specifications](https://www.bluetooth.com/specifications/specs/)
+
+**Demo e Media**:
+- 📷 [Screenshot e Schermate App](https://photos.app.goo.gl/3RQU7nqLYPB2BmdA6) - Galleria Google Photos
 
 ### Contatti Sviluppo
 

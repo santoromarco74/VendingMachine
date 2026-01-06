@@ -93,11 +93,15 @@ Non c'è più erogazione automatica dopo inserimento credito.
 
 ---
 
-## 📸 Screenshots
+## 📸 Screenshot e Demo
 
-| Dashboard (Disconnesso) | Selezione Prodotto | Monitoraggio Live |
-| :---: | :---: | :---: |
-| *(Inserisci qui screenshot)* | *(Inserisci qui screenshot)* | *(Inserisci qui screenshot)* |
+**📷 Galleria Completa**: [Visualizza tutte le foto e schermate su Google Photos](https://photos.app.goo.gl/3RQU7nqLYPB2BmdA6)
+
+La galleria include:
+- 📱 **App Android**: Screenshot interfaccia completa, selezione prodotti, connessione BLE
+- 🖥️ **Display LCD**: Messaggi sistema, stati FSM, feedback utente
+- ⚙️ **Hardware Setup**: Breadboard, cablaggio sensori, componenti montati
+- 🎬 **Demo Live**: Funzionalità in azione (erogazione, sensori, LED RGB)
 
 ---
 
@@ -138,9 +142,11 @@ Non c'è più erogazione automatica dopo inserimento credito.
 * **Permessi:** Bluetooth Scan, Connect e Location (gestiti a runtime)
 * **File:** [`app/src/main/java/com/example/vendingmonitor/MainActivity.kt`](app/src/main/java/com/example/vendingmonitor/MainActivity.kt)
 
-### 📋 Bug Fixes & Changelog
-* **Documentazione Fix:** [`BUGFIXES.md`](BUGFIXES.md)
+### 📋 Documentazione Aggiuntiva
+* **Bug Fixes & Changelog:** [`BUGFIXES.md`](BUGFIXES.md)
 * **Wiring Hardware:** [`WIRING.md`](WIRING.md)
+* **Android App Guide:** [`ANDROID_APP.md`](ANDROID_APP.md)
+* **📷 Screenshot & Demo:** [Google Photos Gallery](https://photos.app.goo.gl/3RQU7nqLYPB2BmdA6)
 
 ---
 
