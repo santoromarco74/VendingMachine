@@ -2,8 +2,15 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.9 LDR SPIKE DETECTION (Adaptive Light Compensation)
+ * VERSIONE: v8.10 UX IMPROVEMENTS (LCD Notifications + Product Confirmation)
  * ======================================================================================
+ *
+ * CHANGELOG v8.10 (2025-01-06):
+ * - [UX] Notifiche connessione/disconnessione BLE visualizzate su LCD (1.5s)
+ * - [UX] Messaggio conferma ora mostra prodotto selezionato: "Conf. x ACQUA!"
+ * - [FEEDBACK] LCD mostra "BLE CONNESSO!" quando app si collega
+ * - [FEEDBACK] LCD mostra "BLE DISCONNESSO" quando app si scollega
+ * - [CLARITY] Utente vede chiaramente quale prodotto sta per acquistare prima di confermare
  *
  * CHANGELOG v8.9 (2025-01-06):
  * - [FIX CRITICAL] Algoritmo LDR spike detection adattivo (risolve problema luce ambiente)
@@ -448,14 +455,38 @@ public:
 
             // Feedback visivo: lampeggio LED blu
             setRGB(0, 0, 1);  // Blu
-            thread_sleep_for(200);
+
+            // Notifica connessione su LCD
+            lcd.clear();
+            wait_us(20000);
+            lcd.setCursor(0, 0);
+            lcd.printf("BLE CONNESSO!   ");
+            wait_us(500);
+            lcd.setCursor(0, 1);
+            lcd.printf("App collegata   ");
+            thread_sleep_for(1500);  // Mostra messaggio per 1.5 secondi
+
             setRGB(0, 1, 0);  // Torna verde
+            lcd.clear();
+            wait_us(20000);
         }
     }
 
     void onDisconnectionComplete(const ble::DisconnectionCompleteEvent &event) override {
         bleConnesso = false;
         printf("[BLE] ✗ Dispositivo DISCONNESSO\n");
+
+        // Notifica disconnessione su LCD
+        lcd.clear();
+        wait_us(20000);
+        lcd.setCursor(0, 0);
+        lcd.printf("BLE DISCONNESSO ");
+        wait_us(500);
+        lcd.setCursor(0, 1);
+        lcd.printf("App scollegata  ");
+        thread_sleep_for(1500);  // Mostra messaggio per 1.5 secondi
+        lcd.clear();
+        wait_us(20000);
 
         // Riavvia advertising per nuove connessioni
         BLE::Instance().gap().startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
@@ -797,8 +828,11 @@ void updateMachine() {
             // Mostra stato credito e richiesta conferma (padding 16 caratteri)
             char buf[17];  // 16 caratteri + \0
             if (credito >= prezzoSelezionato) {
-                // Credito sufficiente: richiede conferma esplicita
-                snprintf(buf, sizeof(buf), "%-16s", "Premi CONFERMA!");
+                // Credito sufficiente: mostra conferma con nome prodotto
+                const char* nomiProdotti[] = {"", "ACQUA", "SNACK", "CAFFE", "THE"};
+                char temp[17];
+                snprintf(temp, sizeof(temp), "Conf. x %s!", nomiProdotti[idProdotto]);
+                snprintf(buf, sizeof(buf), "%-16s", temp);
             } else if (credito > 0 && credito < prezzoSelezionato) {
                 // Credito parziale: mostra quanto manca
                 char temp[17];
@@ -1040,7 +1074,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.9 LDR");
+    lcd.printf("BOOT v8.10 UX");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
