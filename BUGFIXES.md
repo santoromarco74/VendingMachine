@@ -2,20 +2,69 @@
 
 **Ultimo aggiornamento**: 2026-01-06
 **Versione App**: v2.0
-**Versione Firmware**: v8.12
+**Versione Firmware**: v8.13
 
 ---
 
-## 🎯 **FIRMWARE v8.12 - Sonar HC-SR04 Fix** (2026-01-06)
+## 🎓 **FIRMWARE v8.13 - Sonar Stable Restore** (2026-01-06)
 
-### 🔴 **CRITICAL: Sensore Sonar Bloccato a 6cm**
+### ✅ **LESSON LEARNED: "Bug" era Problema Fisico**
 
 **Problema Riportato**:
 > "il sonar misura sempre 6 cm"
 
-**Sintomo**: Il sensore HC-SR04 restituiva sempre 6 cm indipendentemente dalla distanza reale.
+**Causa REALE (non bug!)**:
+🔴 **Sensore HC-SR04 posizionato al centro del tavolo** → riflesso superficie a 6 cm
 
-**Causa Root**:
+**Analisi**:
+Il sensore funzionava correttamente fin dall'inizio! I "6 cm costanti" erano la distanza reale dal tavolo.
+
+**Prova**:
+Spostando il sensore lontano dal tavolo (verso aria libera):
+- ✅ Distanza passa a 135-137 cm (corretto!)
+- ✅ Avvicinando mano: 31 cm → 15 cm (corretto!)
+- ✅ FSM RIPOSO ↔ ATTESA_MONETA funziona (corretto!)
+
+**Fix v8.13**:
+```cpp
+// Versione STABILE ripristinata (v8.11 timing)
+for(int i=0; i<5; i++) {
+    echoDuration = 0;  // ✅ UNICO fix necessario (previene valori obsoleti)
+
+    trig = 0; wait_us(2);
+    trig = 1; wait_us(10);
+    trig = 0;
+    wait_us(15000);  // Timing originale funzionante
+
+    if (echoDuration > 0 && echoDuration < 30000) {
+        int distanza = (int)(echoDuration * 0.0343f / 2.0f);
+        if (distanza >= 2 && distanza <= 400) {
+            somma += distanza;
+            validi++;
+        }
+    }
+    // Nessuna pausa tra misure (funzionava già)
+}
+```
+
+**Rollback da v8.12**:
+- ❌ Rimosso `thread_sleep_for(60)` → causava timeout ISR random
+- ❌ Rimosso timeout 25ms → 15ms sufficiente e più stabile
+- ❌ Rimosso debug logging verboso → output pulito
+
+**Lesson Learned**:
+> "Measure twice, check hardware once before fixing software!"
+> Il problema era il **montaggio fisico**, non il codice.
+
+**Commit**: `fix: Ripristinata versione sonar stabile + echoDuration=0`
+
+---
+
+## 🎯 **FIRMWARE v8.12 - Sonar HC-SR04 (DEPRECATO)** (2026-01-06)
+
+**⚠️ ATTENZIONE**: Questa versione è deprecata. Usare v8.13.
+
+**Causa Root Errata**:
 1. ❌ **echoDuration non azzerata**: La variabile `volatile uint64_t echoDuration` NON veniva azzerata prima di ogni nuova misura
 2. ❌ **Valori obsoleti**: Se il sensore non rispondeva (ISR non chiamata), echoDuration manteneva il valore della misura precedente (~350μs)
 3. ❌ **Timing insufficiente**: Solo 15ms di pausa tra misure, ma HC-SR04 richiede 60ms di "quiet time"
