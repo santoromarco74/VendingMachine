@@ -2,8 +2,14 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.10.1 UX IMPROVEMENTS (LCD Notifications + Product Confirmation)
+ * VERSIONE: v8.11 AUTO-REFUND (Immediate Refund on BLE Disconnect)
  * ======================================================================================
+ *
+ * CHANGELOG v8.11 (2025-01-06):
+ * - [FEATURE] Resto automatico immediato quando BLE si disconnette (se credito > 0)
+ * - [UX] Non serve più aspettare 30s se chiudi l'app con credito residuo
+ * - [LOGIC] onDisconnectionComplete() verifica credito e passa a stato RESTO
+ * - [SAFETY] Previene perdita accidentale di credito su disconnessione app
  *
  * CHANGELOG v8.10.1 (2025-01-06):
  * - [FIX] Risolti residui LCD con padding esplicito a 16 caratteri su tutte le stringhe
@@ -492,6 +498,15 @@ public:
         thread_sleep_for(1500);  // Mostra messaggio per 1.5 secondi
         lcd.clear();
         wait_us(20000);
+
+        // Se c'è credito residuo, restituiscilo immediatamente
+        if (credito > 0) {
+            printf("[BLE] Resto automatico per disconnessione: %dE\n", credito);
+            statoCorrente = RESTO;
+            timerStato.reset();
+            timerStato.start();
+            if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
+        }
 
         // Riavvia advertising per nuove connessioni
         BLE::Instance().gap().startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
@@ -1080,7 +1095,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.10 UX");
+    lcd.printf("BOOT v8.11");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
