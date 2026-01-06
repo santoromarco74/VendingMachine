@@ -2,8 +2,14 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.12 SONAR-FIX (Fixed HC-SR04 Stuck at 6cm)
+ * VERSIONE: v8.12.1 SONAR-DEBUG (Enhanced Diagnostic Logging)
  * ======================================================================================
+ *
+ * CHANGELOG v8.12.1 (2026-01-06):
+ * - [DEBUG] Logging periodico dettagliato ogni 10 misure (anche quando letture OK)
+ * - [DEBUG] Mostra echoDuration, somma campioni, distanza teorica e cache
+ * - [DIAGNOSTIC] Identifica se sensore legge costantemente valori bassi (ostacolo fisico)
+ * - [TROUBLESHOOTING] Aiuta a distinguere bug software vs problema hardware/montaggio
  *
  * CHANGELOG v8.12 (2026-01-06):
  * - [FIX CRITICAL] Risolto sonar HC-SR04 bloccato a 6cm costanti
@@ -568,6 +574,7 @@ void echoFall() {
 int leggiDistanza() {
     int somma = 0;    // Somma campioni validi per calcolo media
     int validi = 0;   // Contatore campioni validi
+    static int debugCounter = 0;  // Contatore per debug periodico
 
     // FASE 1: CAMPIONAMENTO MULTIPLO (5 letture)
     // Riduce errori casuali, migliora precisione
@@ -593,6 +600,9 @@ int leggiDistanza() {
         if (echoDuration > 0 && echoDuration < 50000) {
             // Formula fisica: distanza = (tempo_μs * velocità_suono_cm/μs) / 2
             int distanza = (int)(echoDuration * 0.0343f / 2.0f);
+
+            // DEBUG VERBOSE: Stampa ogni campione (commentare dopo debug)
+            // printf("[SONAR] Campione %d: echoDuration=%lluμs → %dcm\n", i+1, echoDuration, distanza);
 
             // Filtro range sensore: HC-SR04 affidabile solo 2-400cm
             if (distanza >= 2 && distanza <= 400) {
@@ -632,10 +642,22 @@ int leggiDistanza() {
     // Calcola media aritmetica campioni validi
     int media = somma / validi;
 
-    // DEBUG: Logging quando letture riuscite
-    // Mostra quante letture valide, media calcolata, e valore echoDuration ultima misura
-    if (validi < 5) {
-        printf("[SONAR DEBUG] Solo %d/5 letture valide | Media: %dcm | echoDuration ultima misura: %llu μs\n",
+    // DEBUG: Logging periodico dettagliato (ogni 10 chiamate)
+    // Mostra SEMPRE i valori interni anche quando "tutto sembra OK"
+    if (++debugCounter >= 10) {
+        debugCounter = 0;
+        printf("[SONAR DETAIL] Campioni validi: %d/5 | Media: %dcm | echoDuration: %lluμs | Somma: %d\n",
+               validi, media, echoDuration, somma);
+
+        // Calcola distanza teorica dall'ultima echoDuration
+        int distTeor = (int)(echoDuration * 0.0343f / 2.0f);
+        printf("[SONAR DETAIL] Ultima echoDuration %lluμs = %dcm teorici | Cache precedente: %dcm\n",
+               echoDuration, distTeor, ultimaDistanzaValida);
+    }
+
+    // DEBUG: Logging quando letture parziali
+    if (validi < 5 && validi > 0) {
+        printf("[SONAR WARN] Solo %d/5 letture valide | Media: %dcm | echoDuration: %llu μs\n",
                validi, media, echoDuration);
     }
 
