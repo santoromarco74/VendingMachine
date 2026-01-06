@@ -2,8 +2,16 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.8 BLE NOTIFICATION (Stock Management + LCD Only)
+ * VERSIONE: v8.9 LDR SPIKE DETECTION (Adaptive Light Compensation)
  * ======================================================================================
+ *
+ * CHANGELOG v8.9 (2025-01-06):
+ * - [FIX CRITICAL] Algoritmo LDR spike detection adattivo (risolve problema luce ambiente)
+ * - [ALGORITHM] Baseline mobile (EMA) si adatta automaticamente alla luce ambiente
+ * - [ALGORITHM] Rileva monete come variazione improvvisa (+20%) invece di soglia assoluta
+ * - [ROBUSTNESS] Funziona correttamente con luce accesa/spenta senza calibrazione
+ * - [DEBUG] Log LDR esteso: mostra valore, baseline e delta (Δ) per diagnostica
+ * - [FIX] Risolto: credito non scattava con luce ambiente accesa (baseline 47% > soglia 25%)
  *
  * CHANGELOG v8.8 (2025-01-04):
  * - [FEATURE] Notifica connessione/disconnessione BLE sul log seriale
@@ -112,9 +120,10 @@
 // Tutti i parametri critici del sistema: soglie sensori, timeout, prezzi prodotti
 
 // --- Soglie Sensore LDR (rilevamento monete) ---
-#define SOGLIA_LDR_SCATTO 25    // Percentuale LDR sopra la quale considera moneta presente (25%)
-#define SOGLIA_LDR_RESET  15    // Percentuale LDR sotto la quale resetta rilevamento (15%)
-                                // Isteresi: evita oscillazioni continue ON/OFF
+// ALGORITMO SPIKE DETECTION: rileva variazioni improvvise rispetto al baseline
+#define SOGLIA_LDR_DELTA_SCATTO 20  // Delta % sopra baseline per rilevare moneta (spike +20%)
+#define SOGLIA_LDR_DELTA_RESET   5  // Delta % sotto baseline per resettare (spike < +5%)
+#define LDR_BASELINE_ALPHA      10  // Coefficiente media mobile (1-10, più alto = più reattivo)
 
 // --- Soglie Sensore Ultrasuoni (rilevamento presenza utente) ---
 #define DISTANZA_ATTIVA   40    // Distanza in cm sotto la quale utente è considerato presente
@@ -245,6 +254,8 @@ int ultimaDistanzaValida = 100;      // Cache ultima distanza valida (filtro ant
 // --- Sensore LDR (rilevamento monete) ---
 bool monetaInLettura = false;   // TRUE se moneta attualmente presente davanti a LDR
 int ldrSampleCount = 0;         // Contatore campioni consecutivi sopra soglia (debouncing)
+int ldrBaseline = 50;           // Baseline mobile LDR (inizializzato a 50%, si adatta automaticamente)
+bool ldrBaselineInit = false;   // TRUE dopo prima inizializzazione baseline
 
 // --- Sistema Credito e Pagamento ---
 int credito = 0;                // Credito accumulato in EUR (somma monete inserite)
@@ -641,10 +652,11 @@ void updateMachine() {
         dhtMutex.unlock();
 
         const char* nomiStati[] = {"RIPOSO", "ATTESA_MONETA", "EROGAZIONE", "RESTO", "ERRORE"};
-        printf("[STATUS] %s | %-14s | €%-2d | P%d@%dEUR | LDR:%2d%% | DIST:%3dcm | T:%2d°C H:%2d%% | A%d S%d C%d T%d\n",
+        int ldrDelta = ldr_val - ldrBaseline;
+        printf("[STATUS] %s | %-14s | €%-2d | P%d@%dEUR | LDR:%2d%%(B:%2d Δ:%+3d) | DIST:%3dcm | T:%2d°C H:%2d%% | A%d S%d C%d T%d\n",
                bleConnesso ? "BLE:ON " : "BLE:OFF",
                nomiStati[statoCorrente], credito, idProdotto, prezzoSelezionato,
-               ldr_val, dist, temp_copy, hum_copy,
+               ldr_val, ldrBaseline, ldrDelta, dist, temp_copy, hum_copy,
                scorte[1], scorte[2], scorte[3], scorte[4]);
     }
 
@@ -676,9 +688,24 @@ void updateMachine() {
         }
     }
 
-    // DEBOUNCING LDR
+    // SPIKE DETECTION LDR (algoritmo adattivo anti-luce ambiente)
     if (statoCorrente != ERRORE && statoCorrente != EROGAZIONE && statoCorrente != RESTO) {
-        if (ldr_val > SOGLIA_LDR_SCATTO && !monetaInLettura) {
+        // FASE 1: Inizializza/aggiorna baseline mobile (media esponenziale mobile - EMA)
+        // Baseline si adatta automaticamente alla luce ambiente
+        if (!ldrBaselineInit) {
+            ldrBaseline = ldr_val;  // Prima lettura: imposta baseline immediato
+            ldrBaselineInit = true;
+        } else if (!monetaInLettura) {
+            // Aggiorna baseline SOLO quando non c'è moneta (evita distorsione)
+            // EMA: baseline = baseline * (1 - α) + ldr_val * α, con α = LDR_BASELINE_ALPHA/100
+            ldrBaseline = ((100 - LDR_BASELINE_ALPHA) * ldrBaseline + LDR_BASELINE_ALPHA * ldr_val) / 100;
+        }
+
+        // FASE 2: Calcola spike (differenza rispetto al baseline)
+        int ldrDelta = ldr_val - ldrBaseline;
+
+        // FASE 3: Rilevamento spike positivo (moneta blocca luce → LDR aumenta)
+        if (ldrDelta > SOGLIA_LDR_DELTA_SCATTO && !monetaInLettura) {
             if (ldrSampleCount == 0) {
                 ldrDebounceTimer.start();
             }
@@ -696,12 +723,17 @@ void updateMachine() {
                 if (statoCorrente == RIPOSO) statoCorrente = ATTESA_MONETA;
                 if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
 
-                printf("[LDR] Moneta rilevata! Credito=%d EUR\n", credito);
+                printf("[LDR] Moneta rilevata! Credito=%d EUR (val=%d%%, base=%d%%, Δ=+%d%%)\n",
+                       credito, ldr_val, ldrBaseline, ldrDelta);
             }
-        } else if (ldr_val < SOGLIA_LDR_RESET) {
+        }
+        // FASE 4: Reset quando spike rientra sotto soglia minima
+        else if (ldrDelta < SOGLIA_LDR_DELTA_RESET) {
             if (monetaInLettura) {
                 monetaInLettura = false;
                 ldrDebounceTimer.stop();
+                printf("[LDR] Reset moneta (val=%d%%, base=%d%%, Δ=%+d%%)\n",
+                       ldr_val, ldrBaseline, ldrDelta);
             }
             ldrSampleCount = 0;
         }
@@ -1008,7 +1040,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.8 BLE");
+    lcd.printf("BOOT v8.9 LDR");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;

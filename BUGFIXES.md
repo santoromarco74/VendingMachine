@@ -295,8 +295,10 @@ if (tempoPassato < TIMEOUT_RESTO_AUTO) {
 | Componente | Fix Applicati | Crash Risolti | Sicurezza | Stabilità |
 |------------|---------------|---------------|-----------|-----------|
 | **App Android** | 4 | 2 | ⚠️ Medio | ✅ Alta |
-| **Firmware STM32** | 6 | 1 | ✅ Alta | ✅ Alta |
-| **Totale** | **10** | **3** | **✅** | **✅** |
+| **Firmware STM32** | 7 (v8.9+) | 1 | ✅ Alta | ✅ Alta |
+| **Totale** | **11** | **3** | **✅** | **✅** |
+
+**🆕 v8.9**: Aggiunto algoritmo spike detection LDR per rilevamento monete robusto con luce ambiente
 
 ---
 
@@ -325,6 +327,80 @@ if (tempoPassato < TIMEOUT_RESTO_AUTO) {
 - ✅ Inserire monete rapidamente (testa debouncing LDR)
 - ✅ Temperatura oscillante 27-29°C (testa thread DHT)
 - ✅ Lasciare acceso 1h+ (testa watchdog)
+
+---
+
+## 🆕 **Firmware v8.9 (2025-01-06) - LDR Spike Detection**
+
+### 🔴 **CRITICAL FIX: Sensore LDR Non Funziona con Luce Ambiente**
+
+**Problema**:
+```cpp
+// PRIMA (BUGGY v8.8)
+#define SOGLIA_LDR_SCATTO 25  // Soglia assoluta 25%
+#define SOGLIA_LDR_RESET  15
+
+if (ldr_val > SOGLIA_LDR_SCATTO && !monetaInLettura) {
+    // ❌ Con luce ambiente baseline è 47% > 25%
+    // ❌ Sistema rileva SEMPRE moneta presente (falso positivo)
+}
+```
+
+**Sintomi**:
+- Con luce ambiente **ACCESA**: LDR baseline ~47% > soglia 25% → credito non scatta correttamente
+- Con luce ambiente **SPENTA**: LDR baseline ~15% < soglia 25% → funziona
+- Toccare LDR aumenta valore a 84-90%, ma se baseline è già alto non viene rilevato
+
+**Root Cause**:
+Soglie **assolute** invece di **relative**. Il valore LDR dipende dalla luce ambiente, quindi una soglia fissa (25%) funziona solo con luce spenta.
+
+**Fix Applicato (v8.9)**:
+```cpp
+// DOPO (FIXED v8.9) - SPIKE DETECTION ADATTIVO
+#define SOGLIA_LDR_DELTA_SCATTO 20  // Delta relativo +20% sopra baseline
+#define SOGLIA_LDR_DELTA_RESET   5  // Delta relativo +5%
+#define LDR_BASELINE_ALPHA      10  // Coefficiente EMA
+
+int ldrBaseline = 50;  // Baseline mobile (EMA)
+bool ldrBaselineInit = false;
+
+// Aggiorna baseline mobile (solo quando non c'è moneta)
+if (!ldrBaselineInit) {
+    ldrBaseline = ldr_val;  // Init
+    ldrBaselineInit = true;
+} else if (!monetaInLettura) {
+    // EMA: si adatta automaticamente alla luce ambiente
+    ldrBaseline = ((100 - LDR_BASELINE_ALPHA) * ldrBaseline + LDR_BASELINE_ALPHA * ldr_val) / 100;
+}
+
+// Rileva spike come variazione rispetto al baseline
+int ldrDelta = ldr_val - ldrBaseline;
+if (ldrDelta > SOGLIA_LDR_DELTA_SCATTO && !monetaInLettura) {
+    // ✅ Rileva moneta come spike +20% sopra baseline mobile
+    // ✅ Funziona con qualsiasi condizione di luce
+}
+```
+
+**Vantaggi Algoritmo**:
+1. **Baseline Adattivo**: EMA (Exponential Moving Average) si adatta automaticamente alla luce ambiente
+2. **Soglie Relative**: Rileva variazioni improvvise (+20%), non valori assoluti
+3. **Robusto**: Funziona con luce accesa, spenta, o in transizione senza calibrazione
+4. **Debug Migliorato**: Log mostra `LDR:val%(B:baseline Δ:+delta)` per diagnostica
+
+**Esempio Comportamento**:
+```
+Luce ACCESA:
+[STATUS] ... | LDR:47%(B:47 Δ:+0)  | ...  → baseline si adatta a 47%
+[TOCCO]  ... | LDR:84%(B:47 Δ:+37) | ...  → spike +37% > 20% → MONETA RILEVATA ✅
+[STATUS] ... | LDR:48%(B:48 Δ:+0)  | ...  → baseline ritorna a 48%
+
+Luce SPENTA:
+[STATUS] ... | LDR:15%(B:15 Δ:+0)  | ...  → baseline si adatta a 15%
+[TOCCO]  ... | LDR:43%(B:15 Δ:+28) | ...  → spike +28% > 20% → MONETA RILEVATA ✅
+[STATUS] ... | LDR:15%(B:15 Δ:+0)  | ...  → baseline ritorna a 15%
+```
+
+**Impatto**: **CRITICO** - Risolve completamente il problema di rilevamento monete con luce ambiente
 
 ---
 
