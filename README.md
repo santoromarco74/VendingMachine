@@ -93,11 +93,15 @@ Non c'è più erogazione automatica dopo inserimento credito.
 
 ---
 
-## 📸 Screenshots
+## 📸 Screenshot e Demo
 
-| Dashboard (Disconnesso) | Selezione Prodotto | Monitoraggio Live |
-| :---: | :---: | :---: |
-| *(Inserisci qui screenshot)* | *(Inserisci qui screenshot)* | *(Inserisci qui screenshot)* |
+**📷 Galleria Completa**: [Visualizza tutte le foto e schermate su Google Photos](https://photos.app.goo.gl/3RQU7nqLYPB2BmdA6)
+
+La galleria include:
+- 📱 **App Android**: Screenshot interfaccia completa, selezione prodotti, connessione BLE
+- 🖥️ **Display LCD**: Messaggi sistema, stati FSM, feedback utente
+- ⚙️ **Hardware Setup**: Breadboard, cablaggio sensori, componenti montati
+- 🎬 **Demo Live**: Funzionalità in azione (erogazione, sensori, LED RGB)
 
 ---
 
@@ -118,19 +122,20 @@ Non c'è più erogazione automatica dopo inserimento credito.
 ## 🔧 Requisiti & Installazione
 
 ### 🔌 Firmware STM32
-* **Versione Corrente:** v8.7 Final (Optimized + LDR + FSM Fix)
+* **Versione Corrente:** v8.14 (LCD Refill Feedback + Sonar Stable)
 * **IDE:** Keil Studio Cloud / Mbed Studio / Mbed CLI
 * **Librerie:** `mbed-os` (v6+), `TextLCD`, `X_NUCLEO_IDB05A1`
 * **File:** [`firmware/main.cpp`](firmware/main.cpp) ← **Usa questa versione!**
 * **Guida Completa:** Vedi [`firmware/README.md`](firmware/README.md)
 
-**✨ Novità v8.7 Final:**
-* 🎯 **Sonar Adattivo:** Campionamento 500ms in RIPOSO (reattivo), 5s in altri stati (efficiente)
-* 🔧 **Filtro Anti-Spike Asimmetrico:** Permette allontanamenti rapidi, blocca solo spike impossibili
-* 💡 **LDR Ottimizzato:** Debouncing ridotto (3 campioni @ 200ms) per compensare oscillazioni
-* 🖥️ **LCD Fix:** Padding 16 caratteri elimina residui display countdown
+**✨ Novità v8.14 (Versione Finale):**
+* 🖥️ **LCD Feedback Rifornimento:** Mostra "RIFORNIMENTO..." → "RIFORNIMENTO OK!" + "Scorte: 5/5/5/5"
+* 🎯 **Sonar Stabile:** Timing ottimale (echoDuration=0 fix), funzionamento verificato
+* 💡 **LDR Spike Detection:** Baseline adattivo EMA con soglie relative (+20%/+5%)
+* 🔔 **BLE Feedback LCD:** Notifiche connessione/disconnessione su display
+* ⚡ **Auto-Refund:** Resto immediato alla disconnessione BLE (3s vs 30s)
 * 🎨 **LED RGB Configurabile:** Supporto common cathode/anode
-* 📊 **Log Compatto:** Monitor seriale ottimizzato (12 righe → 1 riga)
+* 📊 **Log Compatto:** Monitor seriale ottimizzato (output pulito)
 
 ### 📱 Android App
 * **IDE:** Android Studio Koala (o superiore)
@@ -138,9 +143,11 @@ Non c'è più erogazione automatica dopo inserimento credito.
 * **Permessi:** Bluetooth Scan, Connect e Location (gestiti a runtime)
 * **File:** [`app/src/main/java/com/example/vendingmonitor/MainActivity.kt`](app/src/main/java/com/example/vendingmonitor/MainActivity.kt)
 
-### 📋 Bug Fixes & Changelog
-* **Documentazione Fix:** [`BUGFIXES.md`](BUGFIXES.md)
+### 📋 Documentazione Aggiuntiva
+* **Bug Fixes & Changelog:** [`BUGFIXES.md`](BUGFIXES.md)
 * **Wiring Hardware:** [`WIRING.md`](WIRING.md)
+* **Android App Guide:** [`ANDROID_APP.md`](ANDROID_APP.md)
+* **📷 Screenshot & Demo:** [Google Photos Gallery](https://photos.app.goo.gl/3RQU7nqLYPB2BmdA6)
 
 ---
 

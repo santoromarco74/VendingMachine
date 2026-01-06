@@ -8,35 +8,53 @@ Firmware per **ST Nucleo F401RE** con shield BLE **X-NUCLEO-IDB05A2**.
 
 | File | Versione | Descrizione | Stato |
 |------|----------|-------------|-------|
-| `main.cpp` | **v7.2** | **VERSIONE CORRETTA** con tutti i fix applicati | ✅ **Raccomandato** |
-| `main_v7.1_original.cpp` | v7.1 | Versione originale (solo per riferimento storico) | ⚠️ Deprecato |
+| `main.cpp` | **v8.14** | **VERSIONE FINALE** con tutti i fix e ottimizzazioni | ✅ **Raccomandato** |
+| `main_v7.1_original.cpp` | v7.1 | Versione originale legacy (solo per riferimento storico) | ⚠️ Deprecato |
 
 ---
 
-## 🔧 **Differenze tra le Versioni**
+## 🔧 **Versione v8.14 (FINALE - RACCOMANDATO)**
 
-### **v7.2 (CORRENTE - RACCOMANDATO)**
+### ✨ **Funzionalità Principali**
 
-✅ **Bug Fixes Critici:**
-- Debouncing LDR robusto (5 campioni + 300ms) per evitare conteggi multipli
-- DHT11 spostato in thread separato (non blocca più main loop)
-- Watchdog timer per recovery automatico da hang
-- Validazione comandi BLE (solo 1-4 e 9 accettati)
-- Fix buffer overflow LCD con `snprintf()`
-- Fix timeout underflow con controllo esplicito
+✅ **LCD Feedback Completo:**
+- BLE connessione/disconnessione (v8.10)
+- Conferma prodotto con nome dinamico: "Conf. x ACQUA!" (v8.10)
+- Rifornimento scorte: "RIFORNIMENTO... → OK! / Scorte: 5/5/5/5" (v8.14)
 
-**Changelog completo**: Vedi `../BUGFIXES.md`
+✅ **LDR Spike Detection Adattivo (v8.9):**
+- Baseline mobile EMA (Exponential Moving Average)
+- Soglie relative (+20% scatto, +5% reset)
+- Funziona con qualsiasi illuminazione ambiente
 
-### **v7.1 (ORIGINALE - DEPRECATO)**
+✅ **Sonar HC-SR04 Stabile (v8.13):**
+- echoDuration reset prima di ogni misura
+- Timing ottimale: trig 10μs, timeout 15ms
+- Nessuna pausa tra misure (evita timeout ISR)
 
-⚠️ **Problemi Noti:**
-- LDR può contare una moneta 2-3 volte
-- `thread_sleep_for(18ms)` blocca main loop durante lettura DHT11
-- `__disable_irq()` disabilita anche stack BLE
-- Nessun watchdog (freeze irrecuperabili)
-- Accetta comandi BLE arbitrari
+✅ **Auto-Refund BLE (v8.11):**
+- Resto immediato alla disconnessione BLE (3s vs 30s timeout)
+- Previene perdita accidentale credito
 
-**Usa solo per confronto o debug.**
+✅ **Sistema Robusto:**
+- Watchdog timer 10s
+- Thread separato DHT11 (non blocca main loop)
+- Validazione comandi BLE
+- Gestione scorte con indicatori
+
+**Changelog completo**: Vedi [`../BUGFIXES.md`](../BUGFIXES.md)
+
+### 🆚 **Evoluzione da v7.1**
+
+| Feature | v7.1 (Legacy) | v8.14 (Finale) |
+|---------|---------------|----------------|
+| **LDR Detection** | Soglia assoluta 25% | Spike detection EMA +20% |
+| **Sonar** | Timing base | echoDuration reset + timing ottimale |
+| **LCD Feedback** | Base | Completo (BLE, prodotto, rifornimento) |
+| **BLE Refund** | Timeout 30s | Auto-refund immediato |
+| **Debouncing LDR** | 5 campioni @ 300ms | 3 campioni @ 200ms |
+| **Log Output** | 12 righe box ASCII | 1 riga compatta |
+| **Scorte** | No gestione | Tracking + rifornimento BLE |
 
 ---
 
@@ -78,7 +96,7 @@ Assertion failed: _hci_driver != nullptr
 3. Nome progetto: `VendingMachine`
 4. **Target**: Seleziona `NUCLEO_F401RE`
 5. **Carica tutti i file della cartella firmware:**
-   - `main.cpp` (v7.2)
+   - `main.cpp` (v8.14)
    - `mbed_app.json` ⚠️ **IMPORTANTE!**
    - `mbed-os.lib`
    - `TextLCD.lib`
@@ -263,17 +281,24 @@ for(int addr = 0x20; addr < 0x80; addr += 2) {
 **Causa 2**: Nome BLE non trovato dall'app
 **Soluzione**: Il nome BLE è `VendingM` (linea 577). Assicurati che l'app cerchi questo nome.
 
-### **Problema: "Monete contate multiple volte"**
+### **Problema: "LDR non rileva monete con luce accesa"**
 
-**Causa**: Stai usando v7.1 invece di v7.2
-**Soluzione**: Usa `main.cpp` (v7.2) che ha il debouncing robusto
+**Causa**: Stai usando versione legacy con soglie assolute
+**Soluzione**: Usa `main.cpp` (v8.14) con spike detection EMA adattivo
+
+### **Problema: "Sonar mostra sempre 6cm"**
+
+**Causa**: Sensore HC-SR04 troppo vicino al tavolo (riflesso superficie)
+**Soluzione**:
+1. Sposta sensore lontano da superfici riflettenti
+2. Usa v8.14 che ha echoDuration reset (previene valori obsoleti)
 
 ### **Problema: "Sistema si blocca dopo alcuni minuti"**
 
-**Causa**: Watchdog assente (v7.1) o main loop bloccato
+**Causa**: Main loop bloccato o watchdog non attivo
 **Soluzione**:
-1. Usa v7.2 che ha il watchdog
-2. Verifica log seriale (9600 baud su USBTX/USBRX)
+1. Usa v8.14 che ha watchdog 10s configurato
+2. Verifica log seriale (115200 baud su USBTX/USBRX)
 
 ---
 
@@ -283,19 +308,20 @@ Per vedere i log di debug:
 
 ```bash
 # Linux/Mac:
-screen /dev/ttyACM0 9600
+screen /dev/ttyACM0 115200
 
 # Windows (PuTTY):
 # COM port: quello della Nucleo
-# Baud: 9600
+# Baud: 115200
 ```
 
-Output esempio:
+Output esempio (v8.14):
 ```
-BOOT v7.2 FIXED
-[LDR] Moneta rilevata! Credito=1
-[DHT] Temp=25C Hum=60%
-[SECURITY] Comando BLE invalido ricevuto: 0xFF
+BOOT v8.14
+[BLE] ✓ Dispositivo CONNESSO
+[STATUS] BLE:ON | ATTESA_MONETA | €1 | P1@1EUR | LDR:47%(B:45 Δ:+2) | DIST:35cm | T:22°C H:48% | A5 S5 C5 T5
+[STOCK] Rifornimento completato: 5 pezzi/prodotto
+[BLE] Resto automatico per disconnessione: 1E
 ```
 
 ---
@@ -327,10 +353,17 @@ BOOT v7.2 FIXED
 ## 🆘 **Supporto**
 
 Problemi? Apri una issue su GitHub:
-https://github.com/santoromarco74/VendingMonitor/issues
+https://github.com/santoromarco74/VendingMachine/issues
+
+**Documentazione Completa**:
+- 📋 [BUGFIXES.md](../BUGFIXES.md) - Changelog dettagliato
+- 🔌 [WIRING.md](../WIRING.md) - Schema collegamenti hardware
+- 📱 [ANDROID_APP.md](../ANDROID_APP.md) - Guida app Android
+- 📐 [ARCHITECTURE.md](../ARCHITECTURE.md) - Diagrammi e architettura
 
 ---
 
-**Versione Firmware Corrente**: v7.2 (Golden Master Fixed)
-**Data Ultimo Aggiornamento**: 2025-12-22
+**Versione Firmware Corrente**: v8.14 (LCD Refill Feedback + Sonar Stable) **FINALE**
+**Versione App Android**: v2.0 (Font migliorato + Documentazione IT)
+**Data Ultimo Aggiornamento**: 2026-01-06
 **Autore**: Marco Santoro
