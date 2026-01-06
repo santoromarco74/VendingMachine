@@ -2,22 +2,16 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.12.1 SONAR-DEBUG (Enhanced Diagnostic Logging)
+ * VERSIONE: v8.13 SONAR-STABLE (Restored Stable Sonar + Essential Fix)
  * ======================================================================================
  *
- * CHANGELOG v8.12.1 (2026-01-06):
- * - [DEBUG] Logging periodico dettagliato ogni 10 misure (anche quando letture OK)
- * - [DEBUG] Mostra echoDuration, somma campioni, distanza teorica e cache
- * - [DIAGNOSTIC] Identifica se sensore legge costantemente valori bassi (ostacolo fisico)
- * - [TROUBLESHOOTING] Aiuta a distinguere bug software vs problema hardware/montaggio
- *
- * CHANGELOG v8.12 (2026-01-06):
- * - [FIX CRITICAL] Risolto sonar HC-SR04 bloccato a 6cm costanti
- * - [FIX] echoDuration ora viene azzerata prima di ogni misura (prevenzione valori obsoleti)
- * - [FIX] Aumentato timeout echo: 15ms → 25ms per range completo 400cm
- * - [FIX] Aggiunta pausa 60ms tra misure consecutive (spec HC-SR04 "quiet time")
- * - [DEBUG] Logging dettagliato sonar: echoDuration, campioni validi, timeout
- * - [DEBUG] Identifica automaticamente problemi hardware (ECHO/TRIG disconnessi)
+ * CHANGELOG v8.13 (2026-01-06):
+ * - [ROLLBACK] Ripristinata versione sonar stabile (timing originale funzionante)
+ * - [FIX] Mantenuto SOLO echoDuration=0 (unico fix necessario per valori obsoleti)
+ * - [CLEANUP] Rimosso thread_sleep_for(60) che causava timeout random ISR
+ * - [CLEANUP] Rimosso debug logging verboso (output pulito)
+ * - [STABILITY] Timing ottimale: trig 10μs, timeout 15ms, nessuna pausa tra misure
+ * - [LESSON] "6cm fissi" era riflesso tavolo, non bug software - sensore funzionava già!
  *
  * CHANGELOG v8.11 (2025-01-06):
  * - [FEATURE] Resto automatico immediato quando BLE si disconnette (se credito > 0)
@@ -574,7 +568,6 @@ void echoFall() {
 int leggiDistanza() {
     int somma = 0;    // Somma campioni validi per calcolo media
     int validi = 0;   // Contatore campioni validi
-    static int debugCounter = 0;  // Contatore per debug periodico
 
     // FASE 1: CAMPIONAMENTO MULTIPLO (5 letture)
     // Riduce errori casuali, migliora precisione
@@ -585,48 +578,26 @@ int leggiDistanza() {
 
         // Genera impulso trigger 15μs (spec HC-SR04: min 10μs)
         trig = 0;
-        wait_us(5);        // Assicura fronte di discesa pulito
+        wait_us(2);        // Assicura fronte di discesa pulito
         trig = 1;
-        wait_us(15);       // Impulso HIGH 15μs
+        wait_us(10);       // Impulso HIGH 10μs
         trig = 0;
 
-        // Attende risposta echo con timeout maggiorato
-        // HC-SR04 max range ~400cm = 23ms andata/ritorno
-        wait_us(25000);    // 25ms timeout (era 15ms)
+        // Attende risposta echo (max 15ms = ~250cm range attesa)
+        wait_us(15000);
 
         // FASE 2: VALIDAZIONE TIMEOUT E RANGE
         // echoDuration scritto da ISR interrupt (echoFall)
-        // Timeout 50000μs = 850cm max (oltre è timeout sensore)
-        if (echoDuration > 0 && echoDuration < 50000) {
+        // Timeout 30000μs = ~500cm max
+        if (echoDuration > 0 && echoDuration < 30000) {
             // Formula fisica: distanza = (tempo_μs * velocità_suono_cm/μs) / 2
             int distanza = (int)(echoDuration * 0.0343f / 2.0f);
-
-            // DEBUG VERBOSE: Stampa ogni campione (commentare dopo debug)
-            // printf("[SONAR] Campione %d: echoDuration=%lluμs → %dcm\n", i+1, echoDuration, distanza);
 
             // Filtro range sensore: HC-SR04 affidabile solo 2-400cm
             if (distanza >= 2 && distanza <= 400) {
                 somma += distanza;  // Accumula per media
                 validi++;
-            } else {
-                // DEBUG: Distanza fuori range
-                printf("[SONAR] Campione %d: echoDuration=%lluμs → %dcm FUORI RANGE (2-400cm)\n",
-                       i+1, echoDuration, distanza);
             }
-        } else {
-            // DEBUG: Timeout o echoDuration invalida
-            if (echoDuration == 0) {
-                printf("[SONAR] Campione %d: TIMEOUT - echoDuration=0 (ISR non chiamata? Verificare ECHO collegato)\n", i+1);
-            } else {
-                printf("[SONAR] Campione %d: TIMEOUT - echoDuration=%lluμs > 50ms (oltre range sensore)\n",
-                       i+1, echoDuration);
-            }
-        }
-
-        // CRITICAL FIX: Pausa 60ms tra misure consecutive
-        // HC-SR04 richiede "quiet time" per stabilizzarsi
-        if (i < 4) {  // Non aspettare dopo l'ultima misura
-            thread_sleep_for(60);
         }
     }
 
@@ -634,32 +605,11 @@ int leggiDistanza() {
     // Se tutti e 5 i campioni sono invalidi (timeout/fuori range),
     // mantieni ultima distanza nota per evitare salti a zero
     if (validi == 0) {
-        // DEBUG: Logging diagnostico quando tutte le letture falliscono
-        printf("[SONAR DEBUG] Tutte le 5 letture fallite! echoDuration rimasta a 0 - Possibile problema hardware (ECHO/TRIG disconnessi?)\n");
         return ultimaDistanzaValida;  // Failsafe: usa cache
     }
 
     // Calcola media aritmetica campioni validi
     int media = somma / validi;
-
-    // DEBUG: Logging periodico dettagliato (ogni 10 chiamate)
-    // Mostra SEMPRE i valori interni anche quando "tutto sembra OK"
-    if (++debugCounter >= 10) {
-        debugCounter = 0;
-        printf("[SONAR DETAIL] Campioni validi: %d/5 | Media: %dcm | echoDuration: %lluμs | Somma: %d\n",
-               validi, media, echoDuration, somma);
-
-        // Calcola distanza teorica dall'ultima echoDuration
-        int distTeor = (int)(echoDuration * 0.0343f / 2.0f);
-        printf("[SONAR DETAIL] Ultima echoDuration %lluμs = %dcm teorici | Cache precedente: %dcm\n",
-               echoDuration, distTeor, ultimaDistanzaValida);
-    }
-
-    // DEBUG: Logging quando letture parziali
-    if (validi < 5 && validi > 0) {
-        printf("[SONAR WARN] Solo %d/5 letture valide | Media: %dcm | echoDuration: %llu μs\n",
-               validi, media, echoDuration);
-    }
 
     // FASE 4: FILTRO ANTI-SPIKE ASIMMETRICO (v8.7 Final)
     // PROBLEMA RISOLTO: filtro simmetrico bloccava allontanamenti rapidi
@@ -1157,7 +1107,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.11");
+    lcd.printf("BOOT v8.13");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
