@@ -2,8 +2,13 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.10 UX IMPROVEMENTS (LCD Notifications + Product Confirmation)
+ * VERSIONE: v8.10.1 UX IMPROVEMENTS (LCD Notifications + Product Confirmation)
  * ======================================================================================
+ *
+ * CHANGELOG v8.10.1 (2025-01-06):
+ * - [FIX] Risolti residui LCD con padding esplicito a 16 caratteri su tutte le stringhe
+ * - [LCD] Tutte le stringhe ora terminano con spazi fino a 16 char + '\0' troncato
+ * - [CLEANUP] Rimossi artefatti visivi su transizioni messaggi LCD
  *
  * CHANGELOG v8.10 (2025-01-06):
  * - [UX] Notifiche connessione/disconnessione BLE visualizzate su LCD (1.5s)
@@ -829,10 +834,10 @@ void updateMachine() {
             char buf[17];  // 16 caratteri + \0
             if (credito >= prezzoSelezionato) {
                 // Credito sufficiente: mostra conferma con nome prodotto
+                // Padding esplicito con spazi per evitare residui LCD
                 const char* nomiProdotti[] = {"", "ACQUA", "SNACK", "CAFFE", "THE"};
-                char temp[17];
-                snprintf(temp, sizeof(temp), "Conf. x %s!", nomiProdotti[idProdotto]);
-                snprintf(buf, sizeof(buf), "%-16s", temp);
+                snprintf(buf, sizeof(buf), "Conf. x %s!      ", nomiProdotti[idProdotto]);
+                buf[16] = '\0';  // Tronca esattamente a 16 caratteri
             } else if (credito > 0 && credito < prezzoSelezionato) {
                 // Credito parziale: mostra quanto manca
                 char temp[17];
@@ -840,10 +845,11 @@ void updateMachine() {
                 snprintf(buf, sizeof(buf), "%-16s", temp);
             } else {
                 // Credito zero: mostra prodotto selezionato
-                if(idProdotto==1)      snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x ACQUA");
-                else if(idProdotto==2) snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x SNACK");
-                else if(idProdotto==3) snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x CAFFE");
-                else                   snprintf(buf, sizeof(buf), "%-16s", "Ins.Mon x THE");
+                // Padding esplicito con spazi per evitare residui LCD
+                if(idProdotto==1)      { snprintf(buf, sizeof(buf), "Ins.Mon x ACQUA "); buf[16] = '\0'; }
+                else if(idProdotto==2) { snprintf(buf, sizeof(buf), "Ins.Mon x SNACK "); buf[16] = '\0'; }
+                else if(idProdotto==3) { snprintf(buf, sizeof(buf), "Ins.Mon x CAFFE "); buf[16] = '\0'; }
+                else                   { snprintf(buf, sizeof(buf), "Ins.Mon x THE   "); buf[16] = '\0'; }
             }
             lcd.printf("%s", buf);
 
