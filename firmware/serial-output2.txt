@@ -1,0 +1,165 @@
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 14cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:  3cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:  3cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:  3cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 14cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 14cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:45% | A5 S5 C5 T5
+[FSM] ATTESA_MONETA -> RIPOSO | Credito: 0E | Prodotto: 1
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:45% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:45% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:45% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:45% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:45% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:44% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:136cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:OFF | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:135cm | T:21°C H:42% | A5 S5 C5 T5
+[FSM] RIPOSO -> ATTESA_MONETA | Credito: 0E | Prodotto: 1
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 26cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 26cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 27cm | T:21°C H:41% | A5 S5 C5 T5
+[BLE] ✓ Dispositivo CONNESSO
+[BLE] ACQUA selezionata (scorte=5)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 56cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 56cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 56cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 23cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 23cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 20cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 20cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 20cm | T:21°C H:40% | A5 S5 C5 T5
+[BLE] ✗ Dispositivo DISCONNESSO
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 19cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 19cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 21cm | T:21°C H:40% | A5 S5 C5 T5
+[BLE] ✓ Dispositivo CONNESSO
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 21cm | T:21°C H:40% | A5 S5 C5 T5
+[BLE] ACQUA selezionata (scorte=5)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 21cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 56cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 56cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:40% | A5 S5 C5 T5
+[BLE] THE selezionato (scorte=5)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 32cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P4@2EUR | LDR:47%(B:23 Δ: 24) | DIST: 32cm | T:21°C H:40% | A5 S5 C5 T5
+[LDR] Moneta rilevata! Credito=1 EUR (val=47%, base=25%, Δ=+22%)
+[LDR] Reset moneta (val=28%, base=25%, Δ=3%)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 1 | P4@2EUR | LDR:46%(B:26 Δ: 20) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 1 | P4@2EUR | LDR:17%(B:23 Δ: -6) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 1 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 1 | P4@2EUR | LDR:57%(B:21 Δ: 36) | DIST: 20cm | T:21°C H:40% | A5 S5 C5 T5
+[LDR] Moneta rilevata! Credito=2 EUR (val=57%, base=27%, Δ=+30%)
+[LDR] Reset moneta (val=25%, base=27%, Δ=-2%)
+[LDR] Moneta rilevata! Credito=3 EUR (val=66%, base=35%, Δ=+31%)
+[LDR] Reset moneta (val=32%, base=35%, Δ=-3%)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 3 | P4@2EUR | LDR:63%(B:35 Δ: 28) | DIST: 20cm | T:21°C H:40% | A5 S5 C5 T5
+[LDR] Moneta rilevata! Credito=4 EUR (val=67%, base=41%, Δ=+26%)
+[LDR] Reset moneta (val=32%, base=41%, Δ=-9%)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 4 | P4@2EUR | LDR:63%(B:35 Δ: 28) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[LDR] Moneta rilevata! Credito=5 EUR (val=63%, base=37%, Δ=+26%)
+[LDR] Reset moneta (val=39%, base=37%, Δ=2%)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:19 Δ: -2) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 18cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P4@2EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A5 S5 C5 T5
+[BLE] ACQUA selezionata (scorte=5)
+[STATUS] BLE:ON  | ATTESA_MONETA | € 5 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 19cm | T:21°C H:40% | A5 S5 C5 T5
+[BLE] CONFERMA: credito=5, prezzo=1, stato=1
+[BLE] Accettata: avvio erogazione
+[FSM] ATTESA_MONETA -> EROGAZIONE | Credito: 5E | Prodotto: 1
+[STATUS] BLE:ON  | EROGAZIONE | € 5 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 19cm | T:21°C H:40% | A5 S5 C5 T5
+[EROGAZIONE] Prodotto 1 erogato. Scorte rimanenti: 4
+[FSM] EROGAZIONE -> ATTESA_MONETA | Credito: 4E | Prodotto: 1
+[BLE] CONFERMA: credito=4, prezzo=1, stato=1
+[BLE] Accettata: avvio erogazione
+[FSM] ATTESA_MONETA -> EROGAZIONE | Credito: 4E | Prodotto: 1
+[STATUS] BLE:ON  | EROGAZIONE | € 4 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 15cm | T:21°C H:40% | A4 S5 C5 T5
+[EROGAZIONE] Prodotto 1 erogato. Scorte rimanenti: 3
+[FSM] EROGAZIONE -> ATTESA_MONETA | Credito: 3E | Prodotto: 1
+[STATUS] BLE:ON  | ATTESA_MONETA | € 3 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A3 S5 C5 T5
+[BLE] CONFERMA: credito=3, prezzo=1, stato=1
+[BLE] Accettata: avvio erogazione
+[FSM] ATTESA_MONETA -> EROGAZIONE | Credito: 3E | Prodotto: 1
+[STATUS] BLE:ON  | EROGAZIONE | € 3 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 15cm | T:21°C H:40% | A3 S5 C5 T5
+[EROGAZIONE] Prodotto 1 erogato. Scorte rimanenti: 2
+[BLE] CONFERMA: credito=2, prezzo=1, stato=1
+[BLE] Accettata: avvio erogazione
+[BLE] CONFERMA: credito=2, prezzo=1, stato=2
+[BLE] Rifiutata: stato invalido
+[STATUS] BLE:ON  | EROGAZIONE | € 2 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A2 S5 C5 T5
+[EROGAZIONE] Prodotto 1 erogato. Scorte rimanenti: 1
+[BLE] CONFERMA: credito=1, prezzo=1, stato=1
+[BLE] Accettata: avvio erogazione
+[STATUS] BLE:ON  | EROGAZIONE | € 1 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 15cm | T:21°C H:40% | A1 S5 C5 T5
+[EROGAZIONE] Prodotto 1 erogato. Scorte rimanenti: 0
+[FSM] EROGAZIONE -> ATTESA_MONETA | Credito: 0E | Prodotto: 1
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 18cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 18cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 18cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 19cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 19cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 19cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST:136cm | T:21°C H:40% | A0 S5 C5 T5
+[FSM] ATTESA_MONETA -> RIPOSO | Credito: 0E | Prodotto: 1
+[STATUS] BLE:ON  | RIPOSO | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST:139cm | T:21°C H:40% | A0 S5 C5 T5
+[FSM] RIPOSO -> ATTESA_MONETA | Credito: 0E | Prodotto: 1
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:21%(B:18 Δ:  3) | DIST: 15cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 15cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 15cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 14cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 14cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 17cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 17cm | T:21°C H:40% | A0 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 16cm | T:21°C H:41% | A0 S5 C5 T5
+[STOCK] Rifornimento completato: 5 pezzi/prodotto
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 16cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 24cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 24cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 24cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:18%(B:17 Δ:  1) | DIST: 16cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 16cm | T:21°C H:43% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 24cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 24cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 24cm | T:21°C H:42% | A5 S5 C5 T5
+[STATUS] BLE:ON  | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 53cm | T:21°C H:42% | A5 S5 C5 T5
+[BLE] ✗ Dispositivo DISCONNESSO
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 53cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 38cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 38cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 38cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 16cm | T:21°C H:41% | A5 S5 C5 T5
+[STATUS] BLE:OFF | ATTESA_MONETA | € 0 | P1@1EUR | LDR:17%(B:17 Δ:  0) | DIST: 16cm | T:21°C H:41% | A5 S5 C5 T5
