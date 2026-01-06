@@ -46,7 +46,7 @@ Il progetto dimostra la comunicazione bidirezionale via **BLE (Bluetooth Low Ene
 | **LED RGB** | D6 (R), D8 (G), A3 (B) | Stato e Colore Prodotto |
 | **Tasto Utente** | PC_13 (Button Blu) | Annullamento manuale locale |
 
-```markdown
+
 ## 🛠️ Architettura Hardware
 
 Il sistema utilizza una scheda Nucleo F401RE con shield BLE IDB05A2.
@@ -159,9 +159,8 @@ VendingMonitor/
 │   └── src/main/java/com/example/vendingmonitor/
 │       └── MainActivity.kt       # Activity principale con gestione BLE
 ├── firmware/                     # Firmware STM32 (C++ Mbed OS)
-│   ├── main.cpp                  # ← v7.2 CORRETTA (usa questa!)
-│   ├── main_v7.1_original.cpp    # Versione originale (deprecata)
-│   └── README.md                 # Guida compilazione firmware
+│   ├── main.cpp                  # ← v8.14
+    └── README.md                 # Guida compilazione firmware
 ├── BUGFIXES.md                   # Documentazione bug fix v7.2
 ├── WIRING.md                     # Schema elettrico e cablaggio
 └── README.md                     # Questo file
