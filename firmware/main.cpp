@@ -2,8 +2,14 @@
  * ======================================================================================
  * PROGETTO: Vending Machine IoT (BLE + RTOS + Kotlin Interface)
  * TARGET: ST Nucleo F401RE + Shield BLE IDB05A2
- * VERSIONE: v8.13 SONAR-STABLE (Restored Stable Sonar + Essential Fix)
+ * VERSIONE: v8.14 LCD-REFILL (Display Feedback for Stock Refill)
  * ======================================================================================
+ *
+ * CHANGELOG v8.14 (2026-01-06):
+ * - [UX] Aggiunto feedback LCD per comando rifornimento scorte (cmd 11)
+ * - [DISPLAY] Mostra "RIFORNIMENTO..." → "RIFORNIMENTO OK!" → "Scorte: 5/5/5/5"
+ * - [UX] Messaggio visibile per 2.8 secondi totali (0.8s + 2.0s)
+ * - [CONSISTENCY] Stesso stile dei messaggi BLE connessione/disconnessione
  *
  * CHANGELOG v8.13 (2026-01-06):
  * - [ROLLBACK] Ripristinata versione sonar stabile (timing originale funzionante)
@@ -448,11 +454,38 @@ class VendingServerEventHandler : public ble::GattServer::EventHandler {
                     }
                 }
                 else if (cmd == 11) {
+                    // Feedback LCD: notifica rifornimento in corso
+                    lcd.clear();
+                    wait_us(20000);
+                    lcd.setCursor(0, 0);
+                    lcd.printf("RIFORNIMENTO... ");
+                    wait_us(500);
+                    lcd.setCursor(0, 1);
+                    lcd.printf("Attendere       ");
+
+                    // Aggiorna scorte a valore massimo
                     scorte[1] = SCORTE_MAX;
                     scorte[2] = SCORTE_MAX;
                     scorte[3] = SCORTE_MAX;
                     scorte[4] = SCORTE_MAX;
                     printf("[STOCK] Rifornimento completato: %d pezzi/prodotto\n", SCORTE_MAX);
+
+                    // Feedback LCD: rifornimento completato
+                    thread_sleep_for(800);  // Pausa per leggibilità
+                    lcd.clear();
+                    wait_us(20000);
+                    lcd.setCursor(0, 0);
+                    lcd.printf("RIFORNIMENTO OK!");
+                    wait_us(500);
+                    lcd.setCursor(0, 1);
+                    lcd.printf("Scorte: 5/5/5/5 ");
+                    thread_sleep_for(2000);  // Mostra messaggio per 2 secondi
+
+                    // Torna a display normale
+                    lcd.clear();
+                    wait_us(20000);
+
+                    // Notifica BLE scorte aggiornate
                     if (vendingServicePtr) vendingServicePtr->updateStatus(credito, statoCorrente);
                 }
             }
@@ -1107,7 +1140,7 @@ int main() {
     lcd.clear();
     wait_us(20000);
     lcd.setCursor(0,0);
-    lcd.printf("BOOT v8.13");
+    lcd.printf("BOOT v8.14");
     buzzer = 1;
     thread_sleep_for(100);
     buzzer = 0;
