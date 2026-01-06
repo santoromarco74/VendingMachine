@@ -81,105 +81,197 @@
 #include "ble/GattServer.h"
 #include "TextLCD.h"
 
-// --- CONFIGURAZIONE PIN ---
-#define PIN_TRIG    A1
-#define PIN_ECHO    D9
-#define PIN_LDR     A2
-#define PIN_DHT     D4
-#define PIN_SERVO   D5
-#define PIN_BUZZER  D2
-#define PIN_LCD_SDA D14
-#define PIN_LCD_SCL D15
+// ======================================================================================
+// CONFIGURAZIONE PIN HARDWARE
+// ======================================================================================
+// Mappa tutti i pin utilizzati sul microcontrollore STM32 Nucleo F401RE
+// Questa configurazione è ottimizzata per raggruppare i dispositivi vicini fisicamente
 
-// --- PARAMETRI ---
-#define SOGLIA_LDR_SCATTO 25
-#define SOGLIA_LDR_RESET  15
-#define DISTANZA_ATTIVA   40
-#define SOGLIA_TEMP       28
-#define TIMEOUT_RESTO_AUTO 30000000
-// TIMEOUT_EROGAZIONE_AUTO rimosso in v8.4: erogazione solo su conferma esplicita (cmd 10)
+// --- Sensore Ultrasuoni HC-SR04 (rilevamento presenza utente) ---
+#define PIN_TRIG    A1          // Trigger: invia impulso ultrasuoni
+#define PIN_ECHO    D9          // Echo: riceve risposta ultrasuoni (InterruptIn per precisione timing)
 
-// --- DEBOUNCING LDR ---
-#define LDR_DEBOUNCE_SAMPLES 3   // Ridotto da 5 a 3 per compensare oscillazioni
-#define LDR_DEBOUNCE_TIME_US 200000  // Ridotto da 300ms a 200ms
+// --- Sensore Fotoresistenza LDR (rilevamento monete) ---
+#define PIN_LDR     A2          // Ingresso analogico: valore aumenta quando moneta blocca luce
 
-// --- PREZZI ---
-#define PREZZO_ACQUA      1
-#define PREZZO_SNACK      2
-#define PREZZO_CAFFE      1
-#define PREZZO_THE        2
-int prezzoSelezionato = PREZZO_ACQUA;
-int idProdotto = 1;
-#define FILTRO_INGRESSO   5
-#define FILTRO_USCITA     20
+// --- Sensore Temperatura/Umidità DHT11 ---
+#define PIN_DHT     D4          // Pin bidirezionale: lettura temp/hum tramite protocollo proprietario DHT
 
-// --- UUID BLE ---
-const UUID VENDING_SERVICE_UUID((uint16_t)0xA000);
-const UUID TEMP_CHAR_UUID((uint16_t)0xA001);
-const UUID STATUS_CHAR_UUID((uint16_t)0xA002);
-const UUID HUM_CHAR_UUID((uint16_t)0xA003);
-const UUID CMD_CHAR_UUID((uint16_t)0xA004);
+// --- Attuatori ---
+#define PIN_SERVO   D5          // Servomotore SG90: dispensa prodotti (PWM 1-2ms)
+#define PIN_BUZZER  D2          // Buzzer piezoelettrico: feedback sonoro
 
-// --- STATI FSM ---
-enum Stato { RIPOSO, ATTESA_MONETA, EROGAZIONE, RESTO, ERRORE };
-Stato statoCorrente = RIPOSO;
-Stato statoPrecedente = ERRORE;
+// --- Display LCD 16x2 I2C (interfaccia utente) ---
+#define PIN_LCD_SDA D14         // I2C Data (pin hardware fisso)
+#define PIN_LCD_SCL D15         // I2C Clock (pin hardware fisso)
+                                // Indirizzo I2C: 0x4E (adapter PCF8574)
 
-// --- OGGETTI DRIVER ---
-TextLCD lcd(PIN_LCD_SDA, PIN_LCD_SCL, 0x4E);
-DigitalOut trig(PIN_TRIG);
-InterruptIn echo(PIN_ECHO);
-DigitalInOut dht(PIN_DHT);
-PwmOut servo(PIN_SERVO);
-AnalogIn ldr(PIN_LDR);
-DigitalOut buzzer(PIN_BUZZER);
-DigitalIn tastoAnnulla(PC_13);
+// ======================================================================================
+// PARAMETRI DI CONFIGURAZIONE SISTEMA
+// ======================================================================================
+// Tutti i parametri critici del sistema: soglie sensori, timeout, prezzi prodotti
 
-// --- LED RGB ---
-#define LED_RGB_INVERTED 0  // 1=Common Anode (inverti), 0=Common Cathode (diretto)
+// --- Soglie Sensore LDR (rilevamento monete) ---
+#define SOGLIA_LDR_SCATTO 25    // Percentuale LDR sopra la quale considera moneta presente (25%)
+#define SOGLIA_LDR_RESET  15    // Percentuale LDR sotto la quale resetta rilevamento (15%)
+                                // Isteresi: evita oscillazioni continue ON/OFF
 
-DigitalOut ledR(D6);
-DigitalOut ledG(D8);
-DigitalOut ledB(A3);
+// --- Soglie Sensore Ultrasuoni (rilevamento presenza utente) ---
+#define DISTANZA_ATTIVA   40    // Distanza in cm sotto la quale utente è considerato presente
+                                // Trigger transizione RIPOSO → ATTESA_MONETA
 
+// --- Soglie Temperatura (protezione sistema) ---
+#define SOGLIA_TEMP       28    // Temperatura in °C sopra la quale va in stato ERRORE
+                                // Previene surriscaldamento componenti
+
+// --- Timeout Sistema ---
+#define TIMEOUT_RESTO_AUTO 30000000  // 30 secondi in microsecondi
+                                     // Tempo massimo attesa utente prima di resto automatico
+// TIMEOUT_EROGAZIONE_AUTO rimosso in v8.4:
+// Erogazione ora richiede SEMPRE conferma esplicita tramite comando BLE 10
+
+// --- Debouncing LDR (anti-rimbalzo lettura monete) ---
+#define LDR_DEBOUNCE_SAMPLES 3      // Campioni consecutivi richiesti (ridotto da 5 a 3)
+#define LDR_DEBOUNCE_TIME_US 200000 // Tempo minimo 200ms (ridotto da 300ms)
+                                    // Ottimizzato per compensare oscillazioni valore LDR
+
+// --- Prezzi Prodotti (in EUR) ---
+#define PREZZO_ACQUA      1     // Bottiglia acqua: 1 EUR
+#define PREZZO_SNACK      2     // Snack confezionato: 2 EUR
+#define PREZZO_CAFFE      1     // Caffè: 1 EUR
+#define PREZZO_THE        2     // The: 2 EUR
+int prezzoSelezionato = PREZZO_ACQUA;  // Prodotto selezionato correntemente
+int idProdotto = 1;                    // ID prodotto: 1=ACQUA, 2=SNACK, 3=CAFFE, 4=THE
+
+// --- Filtri FSM (stabilità transizioni stati) ---
+#define FILTRO_INGRESSO   5     // Cicli consecutivi < 40cm richiesti per RIPOSO → ATTESA_MONETA
+#define FILTRO_USCITA     20    // Cicli consecutivi > 60cm richiesti per ATTESA_MONETA → RIPOSO
+
+// ======================================================================================
+// CONFIGURAZIONE BLUETOOTH LOW ENERGY (BLE)
+// ======================================================================================
+// UUID identificativi univoci per servizio e caratteristiche GATT
+// Permette comunicazione wireless con app Android/iOS
+
+const UUID VENDING_SERVICE_UUID((uint16_t)0xA000);  // Servizio principale distributore
+const UUID TEMP_CHAR_UUID((uint16_t)0xA001);        // Caratteristica temperatura (notify)
+const UUID STATUS_CHAR_UUID((uint16_t)0xA002);      // Caratteristica stato (6 byte): [credito, stato, scorte[4]]
+const UUID HUM_CHAR_UUID((uint16_t)0xA003);         // Caratteristica umidità (notify)
+const UUID CMD_CHAR_UUID((uint16_t)0xA004);         // Caratteristica comandi (write):
+                                                    // 1-4=selezione prodotto, 9=annulla, 10=conferma, 11=rifornimento
+
+// ======================================================================================
+// MACCHINA A STATI FINITI (FSM - Finite State Machine)
+// ======================================================================================
+// Gestisce il flusso operativo del distributore automatico
+// Transizioni: RIPOSO ↔ ATTESA_MONETA → EROGAZIONE → RESTO → RIPOSO
+//              └─────────────────────→ ERRORE (temperatura alta)
+
+enum Stato {
+    RIPOSO,         // Utente lontano, distributore in idle (verde)
+    ATTESA_MONETA,  // Utente vicino, attende inserimento monete (ciano/magenta/giallo)
+    EROGAZIONE,     // Dispensing prodotto in corso (servo attivo)
+    RESTO,          // Restituzione resto/credito residuo
+    ERRORE          // Errore sistema (temperatura > soglia, blocco operazioni)
+};
+Stato statoCorrente = RIPOSO;       // Stato attuale FSM
+Stato statoPrecedente = ERRORE;     // Stato precedente (per rilevare cambi stato)
+
+// ======================================================================================
+// OGGETTI DRIVER HARDWARE (Mbed OS)
+// ======================================================================================
+// Istanze delle classi Mbed per interfacciamento con periferiche hardware
+
+TextLCD lcd(PIN_LCD_SDA, PIN_LCD_SCL, 0x4E);  // Display LCD 16x2 I2C (addr 0x4E = 0x27 << 1)
+DigitalOut trig(PIN_TRIG);                    // HC-SR04: trigger ultrasuoni (impulso 10μs)
+InterruptIn echo(PIN_ECHO);                   // HC-SR04: echo risposta (interrupt driven per timing preciso)
+DigitalInOut dht(PIN_DHT);                    // DHT11: pin bidirezionale (input/output switching)
+PwmOut servo(PIN_SERVO);                      // SG90: servomotore PWM 50Hz (duty 1-2ms)
+AnalogIn ldr(PIN_LDR);                        // LDR: fotoresistenza (ADC 0-3.3V → 0-100%)
+DigitalOut buzzer(PIN_BUZZER);                // Buzzer: feedback sonoro (HIGH=suona)
+DigitalIn tastoAnnulla(PC_13);                // Pulsante onboard Nucleo (pull-up interno)
+
+// ======================================================================================
+// LED RGB (feedback visivo stato sistema)
+// ======================================================================================
+// Indica stato FSM tramite colori: Verde=RIPOSO, Ciano=ACQUA, Magenta=SNACK, Giallo=CAFFE
+
+#define LED_RGB_INVERTED 0  // Tipo LED RGB:
+                            // 0 = Common Cathode (catodo comune a GND, anodi ai pin)
+                            // 1 = Common Anode (anodo comune a VCC, catodi ai pin - logica invertita)
+
+DigitalOut ledR(D6);  // LED rosso
+DigitalOut ledG(D8);  // LED verde
+DigitalOut ledB(A3);  // LED blu
+
+/**
+ * @brief Imposta colore LED RGB con supporto common cathode/anode
+ * @param r Rosso: 1=acceso, 0=spento
+ * @param g Verde: 1=acceso, 0=spento
+ * @param b Blu: 1=acceso, 0=spento
+ *
+ * Esempi: setRGB(0,1,0)=verde, setRGB(1,0,1)=magenta, setRGB(1,1,0)=giallo
+ */
 void setRGB(int r, int g, int b) {
 #if LED_RGB_INVERTED
-    ledR = !r; ledG = !g; ledB = !b;  // Inverti per common anode
+    ledR = !r; ledG = !g; ledB = !b;  // Inverti logica per common anode
 #else
-    ledR = r; ledG = g; ledB = b;     // Diretto per common cathode
+    ledR = r; ledG = g; ledB = b;     // Logica diretta per common cathode
 #endif
 }
 
-BufferedSerial pc(USBTX, USBRX, 9600);
-FileHandle *mbed::mbed_override_console(int fd) { return &pc; }
+// ======================================================================================
+// SERIALE USB (debug e logging)
+// ======================================================================================
+BufferedSerial pc(USBTX, USBRX, 9600);  // Comunicazione seriale USB @ 9600 baud
+FileHandle *mbed::mbed_override_console(int fd) { return &pc; }  // Redirige printf() su USB
 
-// --- VARIABILI GLOBALI ---
-Timer sonarTimer;
-Timer timerUltimaMoneta;
-Timer timerStato;
-Timer ldrDebounceTimer;
-volatile uint64_t echoDuration = 0;
-bool monetaInLettura = false;
-int credito = 0;
-int temp_int = 0;
-int hum_int = 0;
-bool dht_valid = false;
-int contatorePresenza = 0;
-int contatoreAssenza = 0;
-int ldrSampleCount = 0;
-bool creditoResiduo = false;
+// ======================================================================================
+// VARIABILI GLOBALI DI STATO
+// ======================================================================================
+// Mantengono lo stato corrente del sistema, sensori, timer
 
-// Filtro distanza per gestire letture spurie 999cm
-int ultimaDistanzaValida = 100;  // Valore iniziale default
+// --- Timer (misurazione tempi) ---
+Timer sonarTimer;           // Misura durata impulso echo HC-SR04 (interrupt driven)
+Timer timerUltimaMoneta;    // Tempo trascorso da ultima moneta inserita (timeout resto)
+Timer timerStato;           // Durata permanenza nello stato corrente
+Timer ldrDebounceTimer;     // Timer debouncing LDR (anti-rimbalzo)
 
-// --- GESTIONE SCORTE ---
-int scorte[5] = {0, 5, 5, 5, 5}; // [0]=dummy, [1]=ACQUA, [2]=SNACK, [3]=CAFFE, [4]=THE
-const int SCORTE_MAX = 5;
+// --- Sensore Ultrasuoni HC-SR04 ---
+volatile uint64_t echoDuration = 0;  // Durata impulso echo in microsecondi (volatile: modificato da ISR)
+int ultimaDistanzaValida = 100;      // Cache ultima distanza valida (filtro anti-spike)
+                                     // Inizializzato a 100cm (distanza media ragionevole)
 
-// Mutex per proteggere accesso DHT
-Mutex dhtMutex;
+// --- Sensore LDR (rilevamento monete) ---
+bool monetaInLettura = false;   // TRUE se moneta attualmente presente davanti a LDR
+int ldrSampleCount = 0;         // Contatore campioni consecutivi sopra soglia (debouncing)
 
-// Watchdog timer
+// --- Sistema Credito e Pagamento ---
+int credito = 0;                // Credito accumulato in EUR (somma monete inserite)
+bool creditoResiduo = false;    // TRUE se c'è credito residuo da restituire
+
+// --- Sensore DHT11 (temperatura/umidità) ---
+int temp_int = 0;       // Temperatura in gradi Celsius (int)
+int hum_int = 0;        // Umidità relativa percentuale (int)
+bool dht_valid = false; // TRUE se ultima lettura DHT11 è valida (checksum OK)
+Mutex dhtMutex;         // Mutex protezione accesso concorrente (thread DHT vs loop principale)
+
+// --- Filtri FSM (stabilizzazione transizioni) ---
+int contatorePresenza = 0;  // Contatore cicli consecutivi con utente presente (dist < 40cm)
+int contatoreAssenza = 0;   // Contatore cicli consecutivi con utente assente (dist > 60cm)
+
+// ======================================================================================
+// GESTIONE SCORTE PRODOTTI
+// ======================================================================================
+// Array scorte: scorte[0]=dummy, scorte[1]=ACQUA, scorte[2]=SNACK, scorte[3]=CAFFE, scorte[4]=THE
+int scorte[5] = {0, 5, 5, 5, 5};  // Inizializzazione: 5 pezzi per prodotto (stock pieno)
+const int SCORTE_MAX = 5;         // Capacità massima magazzino per prodotto
+
+// ======================================================================================
+// WATCHDOG TIMER (sicurezza anti-hang)
+// ======================================================================================
+// Resetta microcontrollore se loop principale non esegue kick() entro 10 secondi
+// Protezione contro blocchi software critici
 Watchdog &watchdog = Watchdog::get_instance();
 
 // ======================================================================================
@@ -363,50 +455,108 @@ static VendingGapEventHandler gap_handler;
 static VendingServerEventHandler server_handler;
 
 // ======================================================================================
-// SENSORI
+// SENSORI - HC-SR04 ULTRASUONI (rilevamento presenza utente)
 // ======================================================================================
-void echoRise() { sonarTimer.reset(); sonarTimer.start(); }
-void echoFall() { sonarTimer.stop(); echoDuration = sonarTimer.elapsed_time().count(); }
 
+/**
+ * @brief Interrupt Service Routine - fronte di salita echo
+ * Chiamata automaticamente quando pin ECHO passa da LOW a HIGH
+ * Avvia timer per misurare durata impulso echo
+ */
+void echoRise() {
+    sonarTimer.reset();  // Reset timer
+    sonarTimer.start();  // Avvia conteggio microsecondi
+}
+
+/**
+ * @brief Interrupt Service Routine - fronte di discesa echo
+ * Chiamata automaticamente quando pin ECHO passa da HIGH a LOW
+ * Stoppa timer e salva durata impulso in variabile volatile
+ */
+void echoFall() {
+    sonarTimer.stop();  // Ferma timer
+    echoDuration = sonarTimer.elapsed_time().count();  // Leggi durata in μs (volatile)
+}
+
+/**
+ * @brief Legge distanza da sensore ultrasuoni HC-SR04 con filtri anti-spike avanzati
+ * @return Distanza in centimetri (range 2-400cm)
+ *
+ * ALGORITMO MULTI-STAGE:
+ * 1. Campionamento multiplo: 5 letture consecutive con media
+ * 2. Filtro range valido: scarta letture < 2cm o > 400cm (fuori specifiche sensore)
+ * 3. Filtro anti-spike ASIMMETRICO:
+ *    - Permette allontanamenti rapidi (es: 20cm → 200cm OK)
+ *    - Blocca solo avvicinamenti impossibili > 150cm (es: 200cm → 10cm BLOCCATO)
+ * 4. Fallback: se nessuna lettura valida, mantiene ultima distanza nota
+ *
+ * FISICA HC-SR04:
+ * - Velocità suono: 343 m/s = 0.0343 cm/μs
+ * - Distanza = (tempo_andata_ritorno * velocità) / 2
+ * - Timeout 50ms = 850cm max teorico (in pratica max affidabile ~400cm)
+ */
 int leggiDistanza() {
-    int somma = 0;
-    int validi = 0;
+    int somma = 0;    // Somma campioni validi per calcolo media
+    int validi = 0;   // Contatore campioni validi
 
-    // Campiona 5 volte invece di 3 per maggiore affidabilità
+    // FASE 1: CAMPIONAMENTO MULTIPLO (5 letture)
+    // Riduce errori casuali, migliora precisione
     for(int i=0; i<5; i++) {
-        trig = 0; wait_us(5);
-        trig = 1; wait_us(15);  // Pulse più lungo per affidabilità
+        // Genera impulso trigger 15μs (spec HC-SR04: min 10μs)
         trig = 0;
-        wait_us(15000);  // Timeout aumentato a 15ms (circa 250cm max)
+        wait_us(5);        // Assicura fronte di discesa pulito
+        trig = 1;
+        wait_us(15);       // Impulso HIGH 15μs
+        trig = 0;
 
-        // Timeout aumentato a 50000μs (circa 850cm max, più tollerante)
+        // Attende risposta echo (max 15ms = ~250cm range attesa)
+        wait_us(15000);
+
+        // FASE 2: VALIDAZIONE TIMEOUT E RANGE
+        // echoDuration scritto da ISR interrupt (echoFall)
+        // Timeout 50000μs = 850cm max (oltre è timeout sensore)
         if (echoDuration > 0 && echoDuration < 50000) {
+            // Formula fisica: distanza = (tempo_μs * velocità_suono_cm/μs) / 2
             int distanza = (int)(echoDuration * 0.0343f / 2.0f);
-            // Filtro range valido: ignora letture < 2cm o > 400cm
+
+            // Filtro range sensore: HC-SR04 affidabile solo 2-400cm
             if (distanza >= 2 && distanza <= 400) {
-                somma += distanza;
+                somma += distanza;  // Accumula per media
                 validi++;
             }
         }
     }
 
+    // FASE 3: GESTIONE NESSUNA LETTURA VALIDA
+    // Se tutti e 5 i campioni sono invalidi (timeout/fuori range),
+    // mantieni ultima distanza nota per evitare salti a zero
     if (validi == 0) {
-        // Nessuna lettura valida: usa ultima distanza valida (SILENZIOSO)
-        return ultimaDistanzaValida;
+        return ultimaDistanzaValida;  // Failsafe: usa cache
     }
 
+    // Calcola media aritmetica campioni validi
     int media = somma / validi;
 
-    // Filtro anti-spike asimmetrico:
-    // - PERMETTE allontanamenti rapidi (utente può allontanarsi velocemente)
-    // - BLOCCA solo avvicinamenti improvvisi > 150cm (probabilmente errori sensore)
+    // FASE 4: FILTRO ANTI-SPIKE ASIMMETRICO (v8.7 Final)
+    // PROBLEMA RISOLTO: filtro simmetrico bloccava allontanamenti rapidi
+    // SOLUZIONE: filtro asimmetrico distingue avvicinamenti da allontanamenti
+    //
+    // FISICA: utente può allontanarsi rapidamente (es: 20cm → 200cm in 500ms)
+    //         ma avvicinamenti > 150cm in 500ms sono impossibili (spike sensore)
+    //
+    // ESEMPI:
+    // ✓ 17cm → 150cm: media(150) > ultimaDist(17) - 150 = -133 → ACCETTATO
+    // ✓ 20cm → 200cm: media(200) > ultimaDist(20) - 150 = -130 → ACCETTATO
+    // ✓ 150cm → 80cm: differenza 70cm < 150cm → ACCETTATO (avvicinamento normale)
+    // ✗ 200cm → 10cm: media(10) < ultimaDist(200) - 150 = 50 → BLOCCATO (spike!)
     if (media < ultimaDistanzaValida - 150) {
-        // Spike negativo eccessivo: da lontano a vicino troppo rapidamente
+        // Spike negativo eccessivo: probabile errore sensore
+        // Mantieni valore precedente per stabilità
         return ultimaDistanzaValida;
     }
 
-    // Aggiorna ultima distanza valida
-    ultimaDistanzaValida = media;
+    // FASE 5: AGGIORNA CACHE E RITORNA
+    ultimaDistanzaValida = media;  // Salva per prossima chiamata
     return media;
 }
 

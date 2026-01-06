@@ -85,6 +85,11 @@ Scrivendo un byte sulla caratteristica `0xA004`, si controlla la macchina:
 | `0x03` | Seleziona **CAFFÈ** | 1 € | Giallo (🟥🟩) |
 | `0x04` | Seleziona **THE** | 2 € | Verde (🟩) |
 | `0x09` | **ANNULLA / RESTO** | - | Viola (Reset) |
+| `0x0A` (10) | **CONFERMA ACQUISTO** | - | Avvia Erogazione |
+| `0x0B` (11) | **RIFORNIMENTO** | - | Reset Scorte Max |
+
+**📝 Nota:** A partire dalla v8.4, l'erogazione richiede **SEMPRE conferma esplicita** (comando 10).
+Non c'è più erogazione automatica dopo inserimento credito.
 
 ---
 
@@ -113,14 +118,19 @@ Scrivendo un byte sulla caratteristica `0xA004`, si controlla la macchina:
 ## 🔧 Requisiti & Installazione
 
 ### 🔌 Firmware STM32
-* **Versione Corrente:** v7.2 (Golden Master Fixed)
+* **Versione Corrente:** v8.7 Final (Optimized + LDR + FSM Fix)
 * **IDE:** Keil Studio Cloud / Mbed Studio / Mbed CLI
 * **Librerie:** `mbed-os` (v6+), `TextLCD`, `X_NUCLEO_IDB05A1`
 * **File:** [`firmware/main.cpp`](firmware/main.cpp) ← **Usa questa versione!**
 * **Guida Completa:** Vedi [`firmware/README.md`](firmware/README.md)
 
-**⚠️ IMPORTANTE**: Usa `firmware/main.cpp` (v7.2) che include tutti i fix critici.
-La versione v7.1 (`firmware/main_v7.1_original.cpp`) è solo per riferimento storico.
+**✨ Novità v8.7 Final:**
+* 🎯 **Sonar Adattivo:** Campionamento 500ms in RIPOSO (reattivo), 5s in altri stati (efficiente)
+* 🔧 **Filtro Anti-Spike Asimmetrico:** Permette allontanamenti rapidi, blocca solo spike impossibili
+* 💡 **LDR Ottimizzato:** Debouncing ridotto (3 campioni @ 200ms) per compensare oscillazioni
+* 🖥️ **LCD Fix:** Padding 16 caratteri elimina residui display countdown
+* 🎨 **LED RGB Configurabile:** Supporto common cathode/anode
+* 📊 **Log Compatto:** Monitor seriale ottimizzato (12 righe → 1 riga)
 
 ### 📱 Android App
 * **IDE:** Android Studio Koala (o superiore)
