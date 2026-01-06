@@ -122,19 +122,20 @@ La galleria include:
 ## 🔧 Requisiti & Installazione
 
 ### 🔌 Firmware STM32
-* **Versione Corrente:** v8.7 Final (Optimized + LDR + FSM Fix)
+* **Versione Corrente:** v8.14 (LCD Refill Feedback + Sonar Stable)
 * **IDE:** Keil Studio Cloud / Mbed Studio / Mbed CLI
 * **Librerie:** `mbed-os` (v6+), `TextLCD`, `X_NUCLEO_IDB05A1`
 * **File:** [`firmware/main.cpp`](firmware/main.cpp) ← **Usa questa versione!**
 * **Guida Completa:** Vedi [`firmware/README.md`](firmware/README.md)
 
-**✨ Novità v8.7 Final:**
-* 🎯 **Sonar Adattivo:** Campionamento 500ms in RIPOSO (reattivo), 5s in altri stati (efficiente)
-* 🔧 **Filtro Anti-Spike Asimmetrico:** Permette allontanamenti rapidi, blocca solo spike impossibili
-* 💡 **LDR Ottimizzato:** Debouncing ridotto (3 campioni @ 200ms) per compensare oscillazioni
-* 🖥️ **LCD Fix:** Padding 16 caratteri elimina residui display countdown
+**✨ Novità v8.14 (Versione Finale):**
+* 🖥️ **LCD Feedback Rifornimento:** Mostra "RIFORNIMENTO..." → "RIFORNIMENTO OK!" + "Scorte: 5/5/5/5"
+* 🎯 **Sonar Stabile:** Timing ottimale (echoDuration=0 fix), funzionamento verificato
+* 💡 **LDR Spike Detection:** Baseline adattivo EMA con soglie relative (+20%/+5%)
+* 🔔 **BLE Feedback LCD:** Notifiche connessione/disconnessione su display
+* ⚡ **Auto-Refund:** Resto immediato alla disconnessione BLE (3s vs 30s)
 * 🎨 **LED RGB Configurabile:** Supporto common cathode/anode
-* 📊 **Log Compatto:** Monitor seriale ottimizzato (12 righe → 1 riga)
+* 📊 **Log Compatto:** Monitor seriale ottimizzato (output pulito)
 
 ### 📱 Android App
 * **IDE:** Android Studio Koala (o superiore)
