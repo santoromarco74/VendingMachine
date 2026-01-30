@@ -901,7 +901,7 @@ void updateMachine() {
             } else if (credito > 0 && credito < prezzoSelezionato) {
                 // Credito parziale: mostra quanto manca
                 char temp[17];
-                snprintf(temp, sizeof(temp), "Cr:%dE T:%02ds", credito, secondiMancanti);
+                snprintf(temp, sizeof(temp), "Cr:%dE T:%02ds", credito, secondiMancanti,"  ");
                 snprintf(buf, sizeof(buf), "%-16s", temp);
             } else {
                 // Credito zero: mostra prodotto selezionato
