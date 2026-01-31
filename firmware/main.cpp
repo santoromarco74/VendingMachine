@@ -900,8 +900,9 @@ void updateMachine() {
                 buf[16] = '\0';  // Tronca esattamente a 16 caratteri
             } else if (credito > 0 && credito < prezzoSelezionato) {
                 // Credito parziale: mostra quanto manca
+                // Padding esplicito con spazi per evitare residui LCD
                 char temp[17];
-                snprintf(temp, sizeof(temp), "Cr:%dE T:%02ds", credito, secondiMancanti,"  ");
+                snprintf(temp, sizeof(temp), "Cr:%dE T:%02ds   ", credito, secondiMancanti);
                 snprintf(buf, sizeof(buf), "%-16s", temp);
             } else {
                 // Credito zero: mostra prodotto selezionato
