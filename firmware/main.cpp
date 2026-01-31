@@ -923,7 +923,7 @@ void updateMachine() {
             if(credito > 0) {
                 // Mostra credito e timeout resto
                 char temp[17];
-                snprintf(temp, sizeof(temp), "Cr:%d/%d T:%02ds", credito, prezzoSelezionato, secondiMancanti);
+                snprintf(temp, sizeof(temp), "Cr:%d/%d T:%02ds   ", credito, prezzoSelezionato, secondiMancanti);
                 snprintf(buf2, sizeof(buf2), "%-16s", temp);
             } else {
                 // Mostra prezzo e scorte prodotto selezionato
