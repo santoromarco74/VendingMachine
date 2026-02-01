@@ -270,6 +270,305 @@ gantt
 
 ---
 
+## ⏱️ Schemi Temporali Segnali (Timing Diagrams)
+
+Questa sezione documenta nel dettaglio i timing dei segnali hardware e le sequenze temporali delle operazioni.
+
+### 📡 HC-SR04 Sonar - Timing Singola Misura
+
+```
+Tempo (μs):  0      2    4    14   15         15000-15015        15030
+             |      |    |    |    |              |                |
+TRIG:   _____|      |____|_____________________________________________
+             0      1    0
+
+ECHO:   ____________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|_____________________
+                    ↑                         ↑
+                  echoRise()              echoFall()
+                    ISR                      ISR
+
+echoDuration: 0 ────────────→ [calcolo] ──────→ [valore finale]
+
+Fasi:
+1. [0-2μs]    TRIG = 0, wait_us(2)
+2. [2-4μs]    TRIG = 1, wait_us(10) → Genera impulso 10μs
+3. [4-14μs]   Impulso trigger attivo
+4. [14μs]     TRIG = 0
+5. [15μs-X]   Attesa ECHO (max 15ms timeout)
+6. [X-Y]      ECHO alto → echoDuration = tempo alto
+7. [15ms]     Timeout attesa risposta
+
+Note:
+- echoDuration viene azzerato PRIMA di ogni misura (fix v8.13)
+- Timeout 15ms = ~250cm range massimo
+- Validazione: 2cm ≤ distanza ≤ 400cm
+```
+
+### 🪙 LDR Coin Detection - Timing Lettura Moneta
+
+```
+Tempo (ms):  0        50       100      150      200      250
+             |        |        |        |        |        |
+LDR Value:
+(baseline)   ────────────────────────────────────────────────
+  100
+
+(moneta      ┌───────────────┐
+ inserita)   │               │
+  150    ────┘               └────────────────────────────
+             ↑               ↑
+          Spike +50%      Reset +5%
+          Detected        (moneta OK)
+
+Stato FSM:   ATTESA_────ATTESA_────ATTESA_────EROGAZIONE────
+             MONETA     MONETA     MONETA
+
+Credito:     0€   →     0€    →    1€    →    1€
+
+Sequenza Operazioni:
+T=0ms:    Lettura LDR = 100 (baseline)
+T=20ms:   Lettura LDR = 150 (+50% spike)
+          → ldrSpike = true
+          → ldrSpikeStart = timer.read_ms()
+          → LED flash bianco 50ms
+
+T=70ms:   Verifica spike持続 > 30ms?
+          → SI: credito += 1€
+          → ldrSpike = false
+          → Aggiorna BLE characteristic
+
+T=120ms:  Lettura LDR = 105 (+5% baseline)
+          → baseline += (105-100) * 0.1 = baseline + 0.5
+          → Nuovo baseline = 100.5 (adattamento EMA)
+
+Parametri:
+- SOGLIA_SPIKE_PERCENT: +20% (baseline adattivo)
+- SOGLIA_RESET_PERCENT: +5% (anti-flickering)
+- MIN_SPIKE_DURATION: 30ms (debounce moneta)
+- EMA_ALPHA: 0.1 (adattamento lento baseline)
+```
+
+### 📱 BLE Command Sequence - Timing Operazioni
+
+```
+Sequenza Tipica Acquisto via App:
+
+T=0ms          App                  STM32 (BLE)              LCD Display
+               |                        |                         |
+T=0          CONNECT BLE ──────────────>│                         │
+               |                        │                         │
+T=50           │                        ├──> BLE CONNESSO!        │
+               |                        │     App collegata       │
+               |                        │     [1500ms display]    │
+T=100        SELECT PROD=2 ────────────>│                         │
+               |                        │                         │
+T=120          │                   idProdotto=2                   │
+               │                   prezzoSelezionato=150          │
+               │                        │                         │
+T=150          │                        ├──> Ins.Mon x SNACK      │
+               |                        │     [permanente]        │
+T=1000     INSERT COIN ───────────────> │                         │
+  (fisico)     |                   (LDR spike)                    │
+T=1050         │                   credito=100                    │
+               │                        │                         │
+T=1100         │                        ├──> Cr:100E T:29s        │
+               |                        │     [update continuo]   │
+T=2000     INSERT COIN ───────────────> │                         │
+T=2050         │                   credito=200                    │
+               │                        │                         │
+T=2100         │                        ├──> Conf. x SNACK!       │
+               |                        │     [credito >= prezzo] │
+T=2500     CONFIRM (cmd=10) ──────────>│                         │
+               |                        │                         │
+T=2520         │                   EROGAZIONE state              │
+               │                        │                         │
+T=2550         │                        ├──> EROGAZIONE...        │
+               |                        │     Attendere           │
+T=2600         │                   motore.write(1)               │
+               |                   thread_sleep_for(2000)         │
+T=4600         │                   motore.write(0)               │
+               │                   scorte[2]--                    │
+               │                        │                         │
+T=4650         │                        ├──> EROGATO SNACK!       │
+               |                        │     Resto: 50E          │
+T=6650         │                   RESTO state                    │
+               |                   eroga 50E resto                │
+T=8650         │                   RIPOSO state                   │
+               │                        │                         │
+T=8700         │                        ├──> VENDING IoT          │
+               |                        │     Pronto              │
+               |                        │                         │
+
+Comandi BLE Disponibili:
+- cmd=1-4:  Selezione prodotto (1=Acqua, 2=Snack, 3=Caffè, 4=The)
+- cmd=9:    Annulla + resto immediato
+- cmd=10:   Conferma acquisto (se credito >= prezzo)
+- cmd=11:   Rifornimento scorte (reset a SCORTE_MAX=5)
+
+Timing BLE:
+- Latenza comando: ~20ms (ricezione → esecuzione)
+- Update characteristic: ~10ms (STM32 → App notifica)
+- Reconnect time: ~500ms (dopo disconnessione)
+```
+
+### 🖥️ LCD Display - Timing Operazioni Scrittura
+
+```
+Sequenza Scrittura Standard:
+
+Tempo (ms):  0      20     25     520    525
+             |      |      |      |      |
+Operazione:  clear  wait   setCursor   printf  wait
+             |      |      |      |      |
+             └──────┴──────┴──────┴──────┘
+
+lcd.clear():          [0ms]    Comando clear
+wait_us(20000):       [20ms]   Attesa stabilizzazione LCD
+lcd.setCursor(0,0):   [25ms]   Posiziona riga 0
+lcd.printf("txt"):    [25ms]   Scrive testo riga 0
+wait_us(500):         [25.5ms] Micro-pausa inter-riga
+lcd.setCursor(0,1):   [26ms]   Posiziona riga 1
+lcd.printf("txt"):    [26ms]   Scrive testo riga 1
+
+Esempio: Feedback Rifornimento (v8.14)
+
+T=0ms:    lcd.clear()
+T=20ms:   wait_us(20000) ────────────────────┐
+T=40ms:   setCursor(0,0)                     │ Fase 1
+T=41ms:   printf("RIFORNIMENTO... ")         │ [800ms tot]
+T=41ms:   wait_us(500)                       │
+T=42ms:   setCursor(0,1)                     │
+T=42ms:   printf("Attendere       ")   ──────┘
+
+T=840ms:  thread_sleep_for(800) ──> Display visibile 800ms
+
+T=840ms:  lcd.clear()
+T=860ms:  wait_us(20000) ────────────────────┐
+T=880ms:  setCursor(0,0)                     │ Fase 2
+T=881ms:  printf("RIFORNIMENTO OK!")         │ [2000ms tot]
+T=881ms:  wait_us(500)                       │
+T=882ms:  setCursor(0,1)                     │
+T=882ms:  printf("Scorte: 5/5/5/5 ")   ──────┘
+
+T=2880ms: thread_sleep_for(2000) ──> Display visibile 2s
+
+T=2880ms: lcd.clear()
+T=2900ms: wait_us(20000)
+T=2920ms: [ritorno a display normale]
+
+Timing Critici:
+- wait_us(20000) dopo clear: OBBLIGATORIO (corruzione display)
+- wait_us(500) tra righe: RACCOMANDATO (stabilità I2C)
+- thread_sleep_for(): Permette task switch RTOS
+```
+
+### 🎰 Product Dispensing - Sequenza Erogazione
+
+```
+Sequenza Completa Erogazione Prodotto:
+
+Fase       Tempo    Operazione                 LCD Display              Hardware
+────────────────────────────────────────────────────────────────────────────────
+CONFERMA   T=0ms    Verifica credito          "Conf. x SNACK!"         LED colore
+                    credito >= prezzo                                   prodotto
+
+           T=50ms   BLE cmd=10 ricevuto       [mantiene conferma]      -
+
+DISPENSE   T=100ms  Entra EROGAZIONE state    "EROGAZIONE..."          -
+                                               "Attendere"
+
+           T=150ms  Verifica scorte[id] > 0   [mantiene messaggio]     -
+
+           T=200ms  motore[id].write(1)       [mantiene messaggio]     Motore ON
+
+           T=200-   ███████████████████       [erogazione visibile]    Motore
+           T=2200ms [thread_sleep_for(2000)]                           running
+
+           T=2200ms motore[id].write(0)       [switch immediato]       Motore OFF
+
+           T=2220ms scorte[id]--              "EROGATO SNACK!"         -
+                    credito -= prezzo          "Resto: 50E"
+
+           T=2240ms Aggiorna BLE status       [mantiene erogato]       -
+
+RESTO      T=4220ms thread_sleep_for(2000)   [messaggio visibile 2s]  -
+                    completa
+
+           T=4220ms Entra RESTO state         "RESTO..."               LED giallo
+                                               "Eroga: 50E"             lampeggio
+
+           T=4270ms Calcola monete resto      [mantiene resto]         -
+                    monete[50E, 20E, 10E...]
+
+           T=4300ms Eroga monete ciclo        [conta monete]           Motore resto
+                    for(ogni moneta)                                   ON/OFF
+
+           T=6300ms Fine resto                "TRANSAZIONE OK!"        -
+                    credito = 0                "Grazie!"
+
+RIPOSO     T=8300ms thread_sleep_for(2000)   [messaggio visibile]     -
+
+           T=8300ms Torna RIPOSO state       "VENDING IoT"            LED verde
+                                              "Pronto"
+
+Timing Critici:
+- Motore ON: 2000ms (tempo erogazione meccanica)
+- Display "EROGATO": 2000ms (feedback utente)
+- Display "RESTO": variabile (dipende monete)
+- Display "GRAZIE": 2000ms (cortesia finale)
+
+Gestione Errori:
+- Se scorte[id] = 0: Salta erogazione, resto immediato
+- Se temp >= 28°C: Blocca erogazione, entra ERRORE state
+- Se BLE disconnect durante: Auto-refund immediato (v8.11)
+```
+
+### 🔄 DHT11 Temperature - Thread Separato
+
+```
+DHT11 Thread (lettura ogni 2 secondi):
+
+Thread Main                  Thread DHT11              DHT11 Sensor
+  |                              |                          |
+  ├─── main() start              |                          |
+  │                              |                          |
+  ├─── thread_dht.start() ──────>│                          |
+  │                              │                          |
+  │                              ├── while(1) loop          |
+  │                              │                          |
+T=0s                             ├── dht.read() ───────────>│
+  │                              │   [wait response]        │
+  │                              │                          ├─ Sensor reading
+  │                              │                          │  [200ms typical]
+  │                              │<─────────────────────────┘
+  │                              │   temp = xx°C
+  │                              │   hum = yy%
+  │                              │
+  │                              ├── Verifica soglie
+  │                              │   temp >= 28°C?
+  │                              │
+  │<──────── flag ERRORE ────────┤   SI: statoCorrente=ERRORE
+  │         (se temp alta)       │
+  │                              │
+  │                              ├── thread_sleep_for(2000)
+T=2s                             │
+  │                              ├── dht.read() ───────────>│
+  │                              │                          │
+
+Timing:
+- Intervallo letture: 2000ms (2 secondi)
+- Tempo lettura DHT11: ~200ms (protocollo 1-wire)
+- Soglia temperatura: 28°C (ERRORE state)
+- Thread priority: Normal (RTOS scheduling)
+
+Sincronizzazione:
+- Accesso atomico a 'statoCorrente' (enum read/write)
+- Nessun mutex richiesto (single writer, multiple readers)
+- Display temp aggiornato nel main loop ogni 2s
+```
+
+---
+
 ## 🧮 Algoritmo Filtro Anti-Spike Asimmetrico
 
 ```mermaid
