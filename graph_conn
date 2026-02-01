@@ -1,0 +1,57 @@
+graph TD
+    subgraph STM32_Nucleo_F401RE
+        N_5V[5V Pin]
+        N_3V3[3.3V Pin]
+        N_GND[GND Pin]
+        
+        P_D14[D14 SDA]
+        P_D15[D15 SCL]
+        P_A1[A1 Trig]
+        P_D9[D9 Echo]
+        P_D5[D5 PWM]
+        P_D4[D4 Data]
+        P_A2[A2 Analog]
+        P_D2[D2 Digital]
+        P_RGB[D6, D8, A3]
+    end
+
+    subgraph I2C_BUS
+        LCD[LCD 16x2 I2C]
+    end
+
+    subgraph SENSORS
+        SONAR[HC-SR04 Sonar]
+        DHT[DHT11 Temp/Hum]
+        LDR[LDR + 10k Res]
+    end
+
+    subgraph ACTUATORS
+        SERVO[Servo SG90]
+        BUZZ[Buzzer Attivo]
+        LEDS[LED RGB]
+    end
+
+    %% Collegamenti Alimentazione (Semplificati)
+    N_5V --> LCD
+    N_5V --> SONAR
+    N_5V --> SERVO
+    
+    N_3V3 --> DHT
+    N_3V3 --> LDR
+
+    %% Collegamenti Segnali
+    P_D14 --- LCD
+    P_D15 --- LCD
+
+    P_A1 --> SONAR
+    SONAR --> P_D9
+
+    P_D5 --> SERVO
+    
+    DHT <--> P_D4
+
+    LDR --> P_A2
+    
+    P_D2 --> BUZZ
+    
+    P_RGB --> LEDS
